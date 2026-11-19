@@ -14,6 +14,7 @@ import {
   encodeUsePetFeed, encodeMakePetFeed, encodePetTamerMistake, encodePetTamerMiracle, encodeFeedPocketInactive, encodeClearPetName,
   encodeRemoveVis, encodeSwapVis, encodeQuePetResurrection, encodeTransformItem, encodePickupPetAwakeningCancel, encodePetFilter,
   encodeVipSortInventory, encodeVipPerinConvert,
+  encodeAwakenWindow,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import { encodeCheering, encodeDoEscape, encodeMotion, encodePropose } from '@flyffweb/protocol'; // 2026-11-14: the Motion window
@@ -247,6 +248,10 @@ export class WorldSession {
   /** custom (owner 2026-11-19, VIP perks): the bag's VIP buttons (protocol world/vipBag.ts). */
   sendVipSortInventory(): void { this.playingCache()?.send(encodeVipSortInventory()); }
   sendVipPerinConvert(): void { this.playingCache()?.send(encodeVipPerinConvert()); }
+  /** custom (owner 2026-11-19): the Awaken window's press (a patched World server; others ignore it). */
+  sendAwaken(itemId: number, awakeId: number, reversionId: number): void {
+    this.playingCache()?.send(encodeAwakenWindow(itemId, awakeId, reversionId));
+  }
   /**
    * 2026-11-17 (view-equip-options): the player menu's View equipment (`SendQueryEquip`), and the Option window's two
    * server-kept options: Allow Inventory View (`SendQueryEquipSetting`) and Duel Requests (`SendChangePKPVPMode(

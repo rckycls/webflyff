@@ -201,6 +201,7 @@ import { UpgradeCursor } from './items/upgradeCursor';
 import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
 import { ticketInUse } from './items/itemWindows';
 import { PiercingWindow, SmeltSafetyWindow } from './items/upgradeNpcWindows';
+import { AwakenWindow } from './items/awakenWindow';
 import { JewelWindows } from './items/jewelWindows';
 import { ItemNpcWindows } from './items/itemNpcWindows';
 import { AmountBox } from './hud/amountBox'; // custom (owner 2026-11-19): the Craft Card's "Repeat how many times?"
@@ -585,6 +586,8 @@ export class WorldScreen {
   private bagDieFlag = false;
   /** 2026-11-05: the Upgrade Specialist's windows. */
   private upgradeNpc: { piercing: PiercingWindow; safety: SmeltSafetyWindow } | undefined;
+  /** custom (owner 2026-11-19): the Awaken window, from the Start menu (items/awakenWindow.ts). */
+  private awaken: AwakenWindow | undefined;
   /** 2026-11-10: Peach's Create Jewels and Jewel Setting (items/jewelWindows.ts). */
   private jewels: JewelWindows | undefined;
   /** 2026-11-11: the rest of the jewel and safe upgrade menus, the Repair window and the GM's ResistItem window. */
@@ -1907,6 +1910,16 @@ export class WorldScreen {
       ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
     };
     this.upgradeNpc = { piercing: new PiercingWindow(upgradeNpcHost), safety: new SmeltSafetyWindow(upgradeNpcHost) };
+    // custom (owner 2026-11-19): the Awaken window, its slots as Piercing's; its own lines in the colour of V15's refusals
+    this.awaken = new AwakenWindow({
+      own: upgradeNpcHost.own, tooltip: upgradeNpcHost.tooltip, props: this.data!.itemProps, texts: this.data!.texts,
+      say: upgradeNpcHost.say,
+      sayText: (text) => this.hud?.messages.add(text, this.data?.texts.get('TID_GAME_LACKMONEY')?.color ?? 0xffffffff),
+      reserve: upgradeNpcHost.reserve, reserved: upgradeNpcHost.reserved, openBag: upgradeNpcHost.openBag,
+      sendAwaken: (item, awake, reversion) => this.session.sendAwaken(item, awake, reversion),
+      now: upgradeNpcHost.now, mobile: upgradeNpcHost.mobile, bagOpen: upgradeNpcHost.bagOpen, closeBag: upgradeNpcHost.closeBag,
+      ui: upgradeNpcHost.ui,
+    });
     // 2026-11-10: Peach's Create Jewels and Jewel Setting (items/jewelWindows.ts)
     this.jewels = new JewelWindows({
       own: () => this.own, props: this.data!.itemProps, ultimate: () => this.data?.ultimate,
@@ -2201,6 +2214,7 @@ export class WorldScreen {
       closed: () => {
         this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); this.jewels?.bagClosed();
         this.bankHud?.bagClosed(); this.summonAngel?.bagClosed();
+        this.awaken?.dismiss(); // custom (owner 2026-11-19): the Awaken window goes with the bag, as Piercing
         this.itemNpc?.bagClosed(); // 2026-11-11: and the item NPC windows it closes (:1015-1075)
         taskBar.dropItemPick(); // 2026-11-12: an item the phone's Task bar button picked goes with the bag
       },
@@ -2810,7 +2824,8 @@ export class WorldScreen {
       this.tradeHud?.windowOpen === true || this.bankHud?.isOpen === true || this.postHud?.isOpen === true ||
       this.personalShop?.isOpen === true || this.summonAngel?.isOpen === true || this.guildBankHud?.isOpen === true ||
       // 2026-11-17: and beside the Backpack, whose taps go to and from the bag
-      this.pocketHud?.isOpen === true;
+      this.pocketHud?.isOpen === true ||
+      this.awaken?.isOpen === true; // custom (owner 2026-11-19): and beside the Awaken window
     // the phone has no drag: a tap on a bag item or on the penya puts it in the trade
     inventoryWindow.trade = {
       // 2026-11-10: and a tap on a bag item puts it in the open jewel window, where a drop would take it
@@ -2821,7 +2836,8 @@ export class WorldScreen {
         this.summonAngel?.isOpen === true || this.itemNpc?.isOpen === true ||
         // 2026-11-11: and the Upgrade Specialist's Safe Upgrade (Safe Element among them) and Piercing: a tap as the
         // double-click
-        this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true,
+        this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true ||
+        this.awaken?.isOpen === true, // custom (owner 2026-11-19): and the Awaken window, a tap as the double-click
       tapItem: (id) => {
         if (tradeHud.windowOpen) tradeHud.tapItem(id);
         else if (bankHud.isOpen) bankHud.tapItem(id);
@@ -2831,8 +2847,9 @@ export class WorldScreen {
         else if (this.jewels?.isOpen === true) { if (!this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
         // 2026-11-11: and in the open item NPC window, where a drop would put it
         else if (this.itemNpc?.isOpen === true) { if (this.itemNpc.tapItem(id) === 'refused') this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
-        else if (this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true) this.takeIntoUpgradeWindow(id);
-        else if (pocketHud.isOpen) pocketHud.tapBagItem(id); // 2026-11-17: into the pocket shown, or an Extra Bag opening it
+        else if (this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true || this.awaken?.isOpen === true) {
+          this.takeIntoUpgradeWindow(id);
+        } else if (pocketHud.isOpen) pocketHud.tapBagItem(id); // 2026-11-17: into the pocket shown, or an Extra Bag opening it
         else tradeHud.tapItem(id);
       },
       tapPenya: () => { if (bankHud.isOpen && !tradeHud.windowOpen) bankHud.tapPenya(); else tradeHud.tapPenya(); },
@@ -3259,6 +3276,7 @@ export class WorldScreen {
   private takeIntoUpgradeWindow(objectId: number, shift = false): boolean {
     if (this.upgradeNpc?.safety.isOpen === true) this.upgradeNpc.safety.take(objectId, shift);
     else if (this.upgradeNpc?.piercing.isOpen === true) this.upgradeNpc.piercing.take(objectId);
+    else if (this.awaken?.isOpen === true) this.awaken.take(objectId); // custom (owner 2026-11-19)
     // 2026-11-10: a jewel window takes its kind (WndField.cpp:2288-2350); the bag refuses anything else (:2577-2584)
     else if (this.jewels?.isOpen === true) { if (!this.jewels.take(objectId)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
     // 2026-11-11: an item NPC window takes its kinds (WndField.cpp:2151-2289), refuses (:2552-2577) or lets the bag use it
@@ -4201,6 +4219,7 @@ this.follow(world, stage);
     if (this.own !== undefined && this.skillWindow?.isOpen === true) this.skillWindow.update(this.own);
     if (this.motionWindow?.isOpen === true) this.motionWindow.refresh(); // 2026-11-14: the phone's pick marks
     if (this.autoPlayWindow?.isOpen === true) this.autoPlayWindow.refresh(); // custom (owner 2026-11-15)
+    this.awaken?.update(); // custom (owner 2026-11-19): its slots and panel follow the bag; nothing while closed
     this.autoButton?.refresh(); // custom (owner 2026-11-15)
   }
 
@@ -4243,6 +4262,8 @@ this.follow(world, stage);
     if (window === 'autoPlay') { this.autoPlayWindow?.toggle(); return; }
     // custom (owner 2026-11-16): the Pet Filter window, from the Start menu and U
     if (window === 'petFilter') { this.petFilterWindow?.toggle(this.petFilter); return; }
+    // custom (owner 2026-11-19): the Awaken window, from the Start menu
+    if (window === 'awaken') { this.awaken?.toggle(); return; }
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
     if (window === 'vendor') {
       if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');
@@ -6232,6 +6253,8 @@ this.follow(world, stage);
     this.upgradeNpc?.piercing.close();
     this.upgradeNpc?.safety.close();
     this.upgradeNpc = undefined;
+    this.awaken?.close();
+    this.awaken = undefined;
     this.jewels?.close();
     this.jewels = undefined;
     this.itemNpc?.close();

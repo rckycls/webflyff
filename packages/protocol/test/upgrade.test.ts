@@ -8,7 +8,7 @@ import {
   encodeEnchant, encodePiercing, encodePiercingSize, encodeRandomScroll, encodeSmeltSafety, encodeUltimateEnchantWeapon, readBundle,
   encodeUltimateMakeGem, encodeUltimateSetGem, UltimateResult, UltimateState,
   encodeRepairItem, encodeUltimateMakeItem, encodeUltimateRemoveGem, encodeUltimateTransWeapon,
-  encodePiercingRemove, encodeRemoveAttribute,
+  encodePiercingRemove, encodeRemoveAttribute, encodeAwakenWindow,
 } from '../src';
 
 const fields = (bytes: Uint8Array): number[] => {
@@ -68,6 +68,14 @@ describe('the Upgrade Specialist\'s packets (2026-11-05)', () => {
     expect(words(encodeSmeltSafety(12, 3, 4, 5))).toEqual([NULL_ID, 0x70007000, 12, 3, 4, 5]);
     expect(words(encodeSmeltSafety(12, 3, 4, NULL_ID))).toEqual([NULL_ID, 0x70007000, 12, 3, 4, NULL_ID]);
     expect(() => encodeSmeltSafety(12, NULL_ID, 4, 5)).toThrow();
+  });
+
+  it('AWAKEN_WINDOW: the item, the Scroll of Awakening, the Reversion or NULL_ID (custom 2026-11-19)', () => {
+    expect(PacketType.AWAKEN_WINDOW).toBe(0x8fff0104);
+    expect(words(encodeAwakenWindow(12, 3, 4))).toEqual([NULL_ID, 0x8fff0104, 12, 3, 4]);
+    expect(words(encodeAwakenWindow(12, 3, NULL_ID))).toEqual([NULL_ID, 0x8fff0104, 12, 3, NULL_ID]);
+    expect(() => encodeAwakenWindow(NULL_ID, 3, 4)).toThrow();
+    expect(() => encodeAwakenWindow(12, NULL_ID, 4)).toThrow();
   });
 
   it('SMELT_SAFETY 0x9900 is read (a byte), so a bundle goes on after it', () => {

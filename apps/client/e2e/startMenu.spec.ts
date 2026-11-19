@@ -45,10 +45,10 @@ for (const size of [...DESKTOPS, ...PHONES]) {
     await enterFlaris(page);
     await page.getByRole('button', { name: 'Start', exact: true }).click();
     const top = await measure(page);
-    // eighteen lines: V15's two folders hold Chatting, Messenger, Couple and Party, Guild
+    // nineteen lines (2026-11-19: the custom Awaken): V15's two folders hold Chatting, Messenger, Couple and Party, Guild
     expect(top.lines.map((line) => line.name)).toEqual([
       'Status', 'Character', 'Skills', 'Inventory', 'Backpack', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map',
-      'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Pet Filter', 'Option', 'Log out',
+      'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Pet Filter', 'Awaken', 'Option', 'Log out',
     ]);
     expectInside(top, `${size.width} x ${size.height}`);
     // the lines on the picture: the last line above its bottom edge (26 px at scale 1, drawn smaller or bigger with the menu)

@@ -98,8 +98,8 @@ export interface UpgradeNpcHost {
 const free = (host: UpgradeNpcHost, objectId: number): number =>
   (host.own()?.inventory?.get(objectId)?.count ?? 0) - host.reserved(objectId);
 
-/** An item's icon drawn in `box` at its top left (32 x 32), or the box emptied of one. */
-function drawIcon(host: UpgradeNpcHost, box: HTMLElement, prop: WebItemProp | null | undefined, alpha = 1): void {
+/** An item's icon drawn in `box` at its top left (32 x 32), or the box emptied of one (2026-11-19: the Awaken window's too). */
+export function drawIcon(host: Pick<UpgradeNpcHost, 'ui'>, box: HTMLElement, prop: WebItemProp | null | undefined, alpha = 1): void {
   box.querySelector('.hud-res-slot')?.remove();
   if (!prop?.icon) return;
   const doc = host.ui.doc;
@@ -115,7 +115,7 @@ function drawIcon(host: UpgradeNpcHost, box: HTMLElement, prop: WebItemProp | nu
 }
 
 /** A slot takes a bag item dropped on it (the bag's drag, `application/x-flyff-inventory`), with Shift held or not. */
-function takeDrops(box: HTMLElement, take: (objectId: number, shift: boolean) => void): void {
+export function takeDrops(box: HTMLElement, take: (objectId: number, shift: boolean) => void): void {
   box.ondragover = (event) => {
     if (event.dataTransfer?.types.includes('application/x-flyff-inventory') === true) event.preventDefault();
   };

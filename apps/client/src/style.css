@@ -4146,6 +4146,26 @@ fieldset:disabled .btn {
   .hud-piercing [data-control="WIDC_OK"] { grid-area: 4 / 1 / 5 / 4; }
   .hud-piercing [data-control="WIDC_CANCEL"] { grid-area: 4 / 4 / 5 / 7; }
 
+  /* custom (owner 2026-11-19): Awaken as Piercing (each word over its slot, the cost by its coin), then the awakening's
+     lines in the panel (the owner's split panel: under the slots, as the bag takes the other side), Awaken and Cancel */
+  .hud-awaken { --panel-width: 300px; }
+  .hud-awaken > .hud-window-body { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px 6px; align-items: center; }
+  .hud-awaken :is([data-control="WIDC_STATIC4"], [data-control="WIDC_STATIC10"]) { display: none; }
+  .hud-awaken :is([data-control="WIDC_STATIC1"], [data-control="WIDC_STATIC2"], [data-control="WIDC_STATIC3"]) { justify-self: center; }
+  .hud-awaken [data-control="WIDC_STATIC1"] { grid-area: 1 / 1 / 2 / 3; }
+  .hud-awaken [data-control="WIDC_STATIC2"] { grid-area: 1 / 3 / 2 / 5; }
+  .hud-awaken [data-control="WIDC_STATIC3"] { grid-area: 1 / 5 / 2 / 7; }
+  .hud-awaken [data-control="WIDC_STATIC5"] { grid-area: 2 / 1 / 3 / 3; }
+  .hud-awaken [data-control="WIDC_STATIC6"] { grid-area: 2 / 3 / 3 / 5; }
+  .hud-awaken [data-control="WIDC_STATIC7"] { grid-area: 2 / 5 / 3 / 7; }
+  .hud-awaken [data-control="WIDC_STATIC8"] { grid-area: 3 / 1 / 4 / 3; justify-self: end; }
+  .hud-awaken [data-control="WIDC_STATIC9"] { grid-area: 3 / 3 / 4 / 7; justify-self: start; }
+  .hud-awaken [data-control="WIDC_LINES"] { grid-area: 4 / 1 / 5 / 7; width: auto !important; height: auto !important; min-height: 34px; align-self: stretch; }
+  .hud-awaken .hud-awaken-lines { position: relative; inset: auto; box-sizing: border-box; max-height: 66px; padding: 5px 7px; line-height: 15px; }
+  .hud-awaken [data-control="WIDC_AWAKEN"] { grid-area: 5 / 1 / 6 / 4; width: auto !important; height: auto !important; display: flex; justify-content: center; }
+  .hud-awaken [data-control="WIDC_AWAKEN"] .auto-word { width: 90px; height: 25px; font-size: 12px; line-height: 23px; }
+  .hud-awaken [data-control="WIDC_CANCEL"] { grid-area: 5 / 4 / 6 / 7; }
+
   /* Repair: the 25 cells in five columns on the edit's white, the cost, OK and Cancel */
   .hud-repair { --panel-width: 250px; }
   .hud-repair > .hud-window-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; align-items: center; }
@@ -5153,22 +5173,35 @@ fieldset:disabled .btn {
 .hud-auto-play :is(.auto-farm-caption, .auto-pot-name) { color: #2e70a9; font-weight: normal; }
 .hud-auto-play :is(.auto-pot-use, .auto-farm-stats, .auto-pick-list[data-empty]) { color: #4b4b4b; }
 .hud-auto-play .auto-farm-state { color: #000000; font-weight: bold; }
-.hud-auto-play .auto-check {
+/* 2026-11-19: the check box and the word button are shared with the Awaken window and its box (custom, owner) */
+:is(.hud-auto-play, .hud-awaken-confirm) .auto-check {
   display: flex; align-items: center; gap: 4px; min-height: 18px; padding: 0; border: 0; background: none;
   color: #000000; font: inherit; font-weight: normal; text-align: left; cursor: pointer;
 }
-.hud-auto-play .auto-v15-check { flex: none; width: 14px; height: 14px; background-repeat: no-repeat; background-position: -14px 0; }
-.hud-auto-play .auto-v15-check[data-frame='3'] { background-position: -42px 0; }
-.hud-auto-play .auto-check:hover .auto-v15-check[data-frame='1'] { background-position: 0 0; }
-.hud-auto-play .auto-check:hover .auto-v15-check[data-frame='3'] { background-position: -28px 0; }
-.hud-auto-play .auto-word {
+:is(.hud-auto-play, .hud-awaken-confirm) .auto-v15-check { flex: none; width: 14px; height: 14px; background-repeat: no-repeat; background-position: -14px 0; }
+:is(.hud-auto-play, .hud-awaken-confirm) .auto-v15-check[data-frame='3'] { background-position: -42px 0; }
+:is(.hud-auto-play, .hud-awaken-confirm) .auto-check:hover .auto-v15-check[data-frame='1'] { background-position: 0 0; }
+:is(.hud-auto-play, .hud-awaken-confirm) .auto-check:hover .auto-v15-check[data-frame='3'] { background-position: -28px 0; }
+:is(.hud-auto-play, .hud-awaken) .auto-word {
   box-sizing: border-box; min-width: 22px; height: 22px; padding: 0 6px; border: 1px solid #a3a3a3; border-radius: 5px;
   background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3); box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px #00000033;
   color: #ffffff; font: bold 11px/20px Verdana, Tahoma, sans-serif; white-space: nowrap; cursor: pointer;
   text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d;
 }
-.hud-auto-play .auto-word:active:not(:disabled) { background: linear-gradient(#e9e9e9, #dadada); }
-.hud-auto-play .auto-word:disabled { opacity: 0.5; cursor: default; }
+:is(.hud-auto-play, .hud-awaken) .auto-word:active:not(:disabled) { background: linear-gradient(#e9e9e9, #dadada); }
+:is(.hud-auto-play, .hud-awaken) .auto-word:disabled { opacity: 0.5; cursor: default; }
+/* custom (owner 2026-11-19): the Awaken window (items/awakenWindow.ts): Awaken as wide as Cancel's picture, the awakening's
+   lines in the tooltip's blue on the box of words, "Not awakened" in black, the box's check box in its words' font */
+.hud-awaken [data-control="WIDC_AWAKEN"] .auto-word {
+  width: 72px; height: 20px; border-color: #8c8c8c; background: linear-gradient(#fafafa, #e4e4e4 45%, #c8c8c8 55%, #dcdcdc);
+  font-size: 12px; line-height: 18px; text-shadow: 1px 0 #5c5c5c, -1px 0 #5c5c5c, 0 1px #5c5c5c, 0 -1px #5c5c5c, 1px 1px #5c5c5c;
+}
+.hud-awaken-lines {
+  position: absolute; inset: 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  font: 12px/16px Verdana, Tahoma, sans-serif; color: #0000ff;
+}
+.hud-awaken-line.is-empty { color: #000000; }
+.hud-awaken-confirm [data-control="WIDC_CHECK"] { display: flex; align-items: center; font: 12px Verdana, Tahoma, sans-serif; }
 .hud-auto-play .auto-farm-go { min-width: 70px; height: 24px; padding: 0 10px; font-size: 12px; line-height: 22px; animation: none; }
 .hud-auto-play .auto-slot {
   width: 34px; height: 34px; padding: 1px; border: 0; border-radius: 0;
@@ -5179,7 +5212,7 @@ fieldset:disabled .btn {
 .hud-auto-play .auto-pick { border: 1px solid #d8b8a4; border-radius: 3px; background: #ffffff; color: #000000; font: 11px Verdana, Tahoma, sans-serif; }
 .hud-auto-play .auto-pick .auto-icon { width: 24px; height: 24px; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .hud-auto-play .auto-check { min-height: 28px; }
+  :is(.hud-auto-play, .hud-awaken-confirm) .auto-check { min-height: 28px; }
   .hud-auto-play .auto-word { min-width: 30px; height: 30px; font-size: 12px; line-height: 28px; }
   .hud-auto-play .auto-farm-go { height: 32px; line-height: 30px; }
   .hud-auto-play .auto-slot-clear { width: 20px; height: 20px; font-size: 12px; line-height: 18px; }

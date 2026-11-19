@@ -15,7 +15,7 @@ import {
   writeMoverDeath, writeMoverMoved, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
   writeSetPointParam, writeSetPos, writeSetPosAngle, writeSetState, writeTaskBar, writeUseSkill, writeWorldReadInfo,
-  writeReturnScrollAck, writeStateMode, writeUpdateItem,
+  writeReturnScrollAck, writeStateMode, writeUpdateItem, writeUpdateItemEx,
   writeMeleeAttack2, writeMoverBehavior2, writeMoverCorr2, writeMoverMoved2, writeSendActMsg, writeSetFuel,
 } from '../src';
 
@@ -200,6 +200,10 @@ it('every writer decodes to what it was given', () => {
     [
       'writeUpdateItem', writeUpdateItem(40, 2, 0, 4), 0x0018,
       { type: 'updateItem', itemType: 0, objectId: 2, param: 0, value: 4, time: 0 },
+    ],
+    [
+      'writeUpdateItemEx', writeUpdateItemEx(40, 5, 10, 0x08cfa184b0041400n), 0x0140,
+      { type: 'updateItemEx', objectId: 5, param: 10, value: 0x08cfa184b0041400n },
     ],
     [
       'writeDoEquip', writeDoEquip(40, 44, 1962, true, 25), 0x0006,

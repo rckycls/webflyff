@@ -50,6 +50,11 @@ export const PacketType = {
    * patches/2026-11-19-craft-card.patch (`PACKETTYPE_CRAFT_CARD`, `CDPSrvr::OnCraftCard`).
    */
   CRAFT_CARD: 0x8fff0110,
+  /**
+   * custom (owner 2026-11-19): the Awaken window's press (world/upgrade.ts `encodeAwakenWindow`). Not in V15: added by the
+   * outer repo's patches/2026-11-19-awaken-window.patch (`PACKETTYPE_AWAKEN_WINDOW`, `CDPSrvr::OnAwakenWindow`).
+   */
+  AWAKEN_WINDOW: 0x8fff0104,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,

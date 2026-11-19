@@ -154,6 +154,18 @@ export function encodeSmeltSafety(itemId: number, materialId: number, scrollId: 
   return clientPacket(PacketType.SMELT_SAFETY).u32(itemId).u32(materialId).u32(scrollId).u32(smeltingId).toBytes();
 }
 
+/**
+ * custom (owner 2026-11-19): the Awaken window's press: the item, the Scroll of Awakening, and the Scroll of Reversion or
+ * NULL_ID. The World server's patch (outer repo, patches/2026-11-19-awaken-window.patch) checks them all, takes the scrolls
+ * and 50,000 Penya, and rolls a new awakening; a World server without the patch ignores it.
+ */
+export function encodeAwakenWindow(itemId: number, awakeId: number, reversionId: number): Uint8Array {
+  checkId(itemId);
+  checkId(awakeId);
+  checkIdOrNull(reversionId);
+  return clientPacket(PacketType.AWAKEN_WINDOW).u32(itemId).u32(awakeId).u32(reversionId).toBytes();
+}
+
 /** 2026-11-11: REMOVE_ATTRIBUTE (`CDPClient::OnRemoveAttributeResult`, DPClient.cpp:6415-6423): its BOOL. */
 export function readRemoveAttribute(r: ArReader): MessageOf<'removeAttribute'> {
   return { type: 'removeAttribute', success: r.i32() !== 0 };

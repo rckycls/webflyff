@@ -205,3 +205,38 @@ export const PIERCING: ResLayout = {
     { kind: 'static', id: 'WIDC_STATIC4', rect: [8, 8, 168, 30], group: GROUP, text: 'Pierce Item' },
   ],
 };
+
+/**
+ * custom (owner 2026-11-19): the Awaken window (items/awakenWindow.ts), APP_PIERCING's left half with its own words (V15 has
+ * no "Awaken" button picture: WIDC_AWAKEN holds a word button), and at its right the split panel the owner asked for, the
+ * item's awakening in a box of words. A phone lays the same controls out in one column (style.css `.hud-awaken`).
+ */
+export const AWAKEN: ResLayout = {
+  title: 'Awaken', width: 352, height: 256,
+  controls: [
+    { kind: 'static', id: 'WIDC_STATIC4', rect: [8, 8, 168, 30], group: GROUP, text: 'Awaken Item' },
+    { kind: 'static', id: 'WIDC_STATIC1', rect: [22, 46, 70, 62], text: 'Item' },
+    { kind: 'static', id: 'WIDC_STATIC2', rect: [22, 86, 108, 102], text: 'Awakening' },
+    { kind: 'static', id: 'WIDC_STATIC3', rect: [22, 130, 110, 146], text: 'Reversion ->' },
+    { kind: 'static', id: 'WIDC_STATIC5', rect: [112, 38, 144, 70], picture: 'WndElemItemBlank.tga' },
+    { kind: 'static', id: 'WIDC_STATIC6', rect: [112, 80, 144, 112], picture: 'WndElemItemBlank.tga' },
+    { kind: 'static', id: 'WIDC_STATIC7', rect: [112, 122, 144, 154], picture: 'WndElemItemBlank.tga' },
+    { kind: 'static', id: 'WIDC_STATIC8', rect: [24, 162, 46, 182], picture: 'ButtMoney.tga' },
+    { kind: 'static', id: 'WIDC_STATIC9', rect: [58, 164, 144, 180], text: '0' },
+    { kind: 'custom', id: 'WIDC_AWAKEN', rect: [12, 192, 84, 212] },
+    cancel('WIDC_CANCEL', [94, 192, 166, 212]),
+    { kind: 'static', id: 'WIDC_STATIC10', rect: [176, 8, 336, 30], group: GROUP, text: 'Awakening' },
+    { kind: 'custom', id: 'WIDC_LINES', rect: [176, 38, 336, 214], tile: EDIT },
+  ],
+};
+
+/** custom (owner 2026-11-19): the Awaken window's Yes/No box (APP_SMELT_SAFETY_CONFIRM's look), with "Don't ask again". */
+export const AWAKEN_CONFIRM: ResLayout = {
+  title: 'Awaken', width: 336, height: 176, modal: true,
+  controls: [
+    { kind: 'text', id: 'WIDC_TEXT1', rect: [10, 10, 318, 84], tile: EDIT },
+    { kind: 'custom', id: 'WIDC_CHECK', rect: [12, 90, 318, 108] },
+    yes('WIDC_YES', [74, 116, 146, 136]),
+    no('WIDC_NO', [182, 116, 254, 136]),
+  ],
+};

@@ -273,6 +273,14 @@ export function writeUpdateItem(objectId: number, itemObjectId: number, param: n
   return scripted(objectId, 0x0018, new ArWriter().u8(0).u8(itemObjectId).u8(param).u32(value).u32(time));
 }
 
+/**
+ * 2026-11-19 (Awaken window): UPDATE_ITEM_EX 0x0140 (`CUser::UpdateItemEx`): the inventory item at `itemObjectId` gets the
+ * 64-bit `value` in its `param` (`UI_RANDOMOPTITEMID` 10, its awakening), as `readUpdateItemEx` reads it.
+ */
+export function writeUpdateItemEx(objectId: number, itemObjectId: number, param: number, value: bigint): ScriptMessage {
+  return scripted(objectId, 0x0140, new ArWriter().u8(itemObjectId).u8(param).i64(value));
+}
+
 /** Piece 7 M2: SETSKILLSTATE (`CUserMng::AddSetSkillState`): a buff on `targetId`, its whole length `time` (ms). */
 export function writeSetSkillState(objectId: number, targetId: number, buffType: number, id: number, level: number, time: number): ScriptMessage {
   return scripted(objectId, MessageType.SETSKILLSTATE, new ArWriter().u32(targetId).u16(buffType).u16(id).u32(level).u32(time));

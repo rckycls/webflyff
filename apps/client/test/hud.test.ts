@@ -790,7 +790,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.element.querySelectorAll('.hud-slot[data-kind]')).toHaveLength(0);
     expect(bar.element.querySelector('.hud-taskbar-number')!.textContent).toBe('1');
     bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-start')!.click();
-    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[17]!.click(); // Log out (2026-11-15: after Housing, Couple, Siege Ranking and Auto Play too; 2026-11-17: Backpack; Pet Filter; 2026-11-18: the folders)
+    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[18]!.click(); // Log out (2026-11-15: after Housing, Couple, Siege Ranking and Auto Play too; 2026-11-17: Backpack; Pet Filter; 2026-11-18: the folders; 2026-11-19: Awaken)
     expect(calls).toEqual(['logOut']);
     // the own numbers come with no TASKBAR yet: still empty; then it comes
     const own = newVagrant();
@@ -913,13 +913,15 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.menuOpen).toBe(true);
     // 2026-11-18 (owner, "Start menu is overflowing"): V15's Communication and Community folders, their lines in sub-menus
     const items = [...menu.querySelectorAll<HTMLButtonElement>(':scope > [role="menuitem"]')];
-    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Backpack', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Pet Filter', 'Option', 'Log out']);
-    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Backpack', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Pet Filter', 'Option', 'Log out']);
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Backpack', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Pet Filter', 'Awaken', 'Option', 'Log out']);
+    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Backpack', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Pet Filter', 'Awaken', 'Option', 'Log out']);
     // every line has its window (the skill window's, milestone 2's, too)
-    expect(items.map((item) => item.disabled)).toEqual(Array.from({ length: 18 }, () => false));
+    expect(items.map((item) => item.disabled)).toEqual(Array.from({ length: 19 }, () => false));
     // the picture holds nineteen lines (V15's); a new window goes in a folder past that (2026-11-18)
     expect(items.length).toBeLessThanOrEqual(MENU_MAX_LINES);
     expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
+    // custom (owner 2026-11-19): the Awaken line shows the Scroll of Awakening's own item icon
+    expect(items[16]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/item/itm_syssysscrawake.png');
     // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653), line i at (10, 50 + 22 i), 162 wide, with its applet's hotkey
     // (AppendMenu, :2746); each line takes its whole 22 px row, no gap between two (ruling R27). The picture,
     // WndTaskMenu.tga (192 x 496), is drawn in three: its top edge (0-50), the four lines' rows (50-138) and its bottom
@@ -928,10 +930,11 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     // Ranking, and the custom Auto Play; 2026-11-17: Backpack; and the custom Pet Filter; 2026-11-18: five lines in V15's folders)
     const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
     expect(slices.map((slice) => [slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
-      ['0px', '50px', '0px 0px'], ['50px', '396px', '0px -50px'], ['446px', '26px', '0px -470px'],
+      ['0px', '50px', '0px 0px'], ['50px', '418px', '0px -50px'], ['468px', '28px', '0px -468px'],
     ]);
     expect(slices.every((slice) => slice.style.backgroundImage === 'url("/assets/ui/wndtaskmenu.png")')).toBe(true);
-    expect([menu.style.width, menu.style.height]).toEqual(['192px', '472px']);
+    // 2026-11-19: nineteen lines (the custom Awaken), the picture's whole 496 px
+    expect([menu.style.width, menu.style.height]).toEqual(['192px', '496px']);
     expect(items.map((item) => [item.style.left, item.style.top, item.style.width, item.style.height])).toEqual([
       ['10px', '50px', '162px', '22px'],
       ['10px', '72px', '162px', '22px'],
@@ -951,8 +954,9 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
       ['10px', '380px', '162px', '22px'],
       ['10px', '402px', '162px', '22px'],
       ['10px', '424px', '162px', '22px'],
+      ['10px', '446px', '162px', '22px'],
     ]);
-    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'B', 'Y', '', 'Q', 'O', 'M', 'N', '', '', '', '', 'U', '', '']);
+    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'B', 'Y', '', 'Q', 'O', 'M', 'N', '', '', '', '', 'U', '', '', '']);
     // the menu stands on the bar, its own scale
     expect(menu.style.bottom).toBe('48px');
     // a folder's line (icon_Folder.dds) shows its sub-menu beside it, its applets' lines with their icons and hotkeys; the
@@ -983,7 +987,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     calls.length = 0;
     start.click();
     expect(submenu.hidden).toBe(true);
-    items[17]!.click(); // Log out, after the custom Auto Play and Pet Filter lines
+    items[18]!.click(); // Log out, after the custom Auto Play, Pet Filter and Awaken lines
     expect(calls).toEqual(['logOut']);
     expect(menu.hidden).toBe(true);
     // Start again opens it; Status opens the status window and closes the menu; Start twice, or a press elsewhere, closes it
@@ -1093,8 +1097,8 @@ describe('taskBarLayout (CWndTaskBar::Initialize, WndTaskBar.cpp:1264-1306; resd
     expect(strip(small).style.transform).toBe('scale(0.5)');
     const menu = small.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
     // (2026-11-15: 496 px with Housing, Couple, Siege Ranking and Auto Play, more than the 456 above a 480 px layer's bar)
-    // (2026-11-17: 516 px with Backpack; 540 with the Pet Filter; 2026-11-18: 472 with V15's folders)
-    expect([menu.style.transform, menu.style.bottom]).toEqual([`scale(${(480 - 24) / 472})`, '24px']);
+    // (2026-11-17: 516 px with Backpack; 540 with the Pet Filter; 2026-11-18: 472 with V15's folders; 2026-11-19: 496 with Awaken)
+    expect([menu.style.transform, menu.style.bottom]).toEqual([`scale(${(480 - 24) / 496})`, '24px']);
     expect(small.element.parentElement!.style.getPropertyValue('--hud-taskbar-height')).toBe('24px');
   });
 });
@@ -1419,7 +1423,7 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.transform).toBe('scale(0.75)');
     expect([menu.style.transform, menu.style.bottom]).toEqual(['', '36px']);
     // 150 px high: 102 px above the bar
-    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 472})`); // 2026-11-18: 472 px with V15's folders
+    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 496})`); // 2026-11-19: 496 px with Awaken
   });
 
   it('on a touch screen it is up to twice its size as the room above the bar allows; a phone\'s at most 0.85 (2026-11-13)', () => {
@@ -1430,35 +1434,35 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
       expect(menuOn(844, 390).menu.style.transform).toBe('scale(0.85)');
       expect(menuOn(750, 342).menu.style.transform).toBe('scale(0.85)');
       // a phone shorter than the menu at 0.85: as the room allows
-      expect(menuOn(568, 220).menu.style.transform).toBe(`scale(${(220 - 48 * (Math.round(0.56 * (568 - 32)) / 620)) / 276})`); // 2026-11-18: 276 px, nine lines a column
+      expect(menuOn(568, 220).menu.style.transform).toBe(`scale(${(220 - 48 * (Math.round(0.56 * (568 - 32)) / 620)) / 296})`); // 2026-11-19: 296 px, ten lines in the first column
       // a tall touch screen, wider than a phone, keeps one column, up to twice its size
       expect(menuOn(1024, 900).menu.style.width).toBe('192px');
       // (2026-11-15: 496 px with Housing, Couple, Siege Ranking and Auto Play, a little under twice in 852 px)
-      expect(menuOn(1024, 900).menu.style.transform).toBe(`scale(${(900 - 48) / 472})`); // 2026-11-18: 472 px with V15's folders
+      expect(menuOn(1024, 900).menu.style.transform).toBe(`scale(${(900 - 48) / 496})`); // 2026-11-19: 496 px with Awaken
     });
   });
 
-  it('on a short touch screen the lines stand in two columns, 9 and 9 (2026-11-18: eighteen lines with V15\'s folders), each column on its own picture', () => {
+  it('on a short touch screen the lines stand in two columns, 10 and 9 (2026-11-19: nineteen lines with the custom Awaken), each column on its own picture', () => {
     onTouchScreen(() => {
       const { menu } = menuOn(750, 342);
-      expect([menu.style.width, menu.style.height]).toEqual(['384px', '276px']);
+      expect([menu.style.width, menu.style.height]).toEqual(['384px', '296px']);
       const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
-      // after nine lines' rows (an odd number) the bottom edge is the picture's last 28 px, its stripes in step
+      // after ten lines' rows (an even number) the bottom edge is the picture's last 26 px, its stripes in step
       expect(slices.map((slice) => [slice.style.left, slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
-        ['0px', '0px', '50px', '0px 0px'], ['0px', '50px', '198px', '0px -50px'], ['0px', '248px', '28px', '0px -468px'],
-        ['192px', '0px', '50px', '0px 0px'], ['192px', '50px', '198px', '0px -50px'], ['192px', '248px', '28px', '0px -468px'],
+        ['0px', '0px', '50px', '0px 0px'], ['0px', '50px', '220px', '0px -50px'], ['0px', '270px', '26px', '0px -470px'],
+        ['192px', '0px', '50px', '0px 0px'], ['192px', '50px', '220px', '0px -50px'], ['192px', '270px', '26px', '0px -470px'],
       ]);
       const items = [...menu.querySelectorAll<HTMLButtonElement>(':scope > [role="menuitem"]')];
       expect(items.map((item) => [item.style.left, item.style.top])).toEqual([
-        ...[0, 1, 2, 3, 4, 5, 6, 7, 8].map((row) => ['10px', `${50 + 22 * row}px`]),
+        ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((row) => ['10px', `${50 + 22 * row}px`]),
         ...[0, 1, 2, 3, 4, 5, 6, 7, 8].map((row) => ['202px', `${50 + 22 * row}px`]),
       ]);
-      expect(items[9]!.getAttribute('aria-label')).toBe('World Map');
+      expect(items[10]!.getAttribute('aria-label')).toBe('Navigator');
       // a tap on a folder's line shows its sub-menu (no pointer rests on it); Communication's, beside its line in the right column
       items[11]!.click();
       const submenu = menu.querySelector<HTMLElement>('.hud-taskbar-submenu[aria-label="Communication"]')!;
       expect(submenu.hidden).toBe(false);
-      expect([submenu.style.left, submenu.style.top]).toEqual(['364px', '94px']);
+      expect([submenu.style.left, submenu.style.top]).toEqual(['364px', '72px']);
     });
   });
 
