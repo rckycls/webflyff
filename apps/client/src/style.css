@@ -540,6 +540,121 @@ fieldset:disabled .btn {
   font-size: 1.25rem;
 }
 
+/* 2026-11-20 (loading screen, world/loading/loadingScreen.ts): V15's loading picture whole in the middle (4:3), a dark blur
+   of it filling the sides of a wide screen, and the progress bar under its "Now Loading" badge. Under the Leave button and
+   any drop box while the world loads; over the world and its windows once they are on the page, for the fade. */
+.world-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #000;
+  container-type: size;
+}
+
+.world-loading-over {
+  z-index: 1500;
+}
+
+.world-loading-fading {
+  opacity: 0;
+  transition: opacity 700ms linear;
+  pointer-events: none;
+}
+
+.world-loading-blur {
+  position: absolute;
+  inset: -48px;
+  background: center / cover no-repeat;
+  filter: blur(24px) brightness(0.45);
+}
+
+.world-loading-box {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(100vw, 133.333vh);
+  width: min(100cqw, 133.333cqh);
+  aspect-ratio: 4 / 3;
+  transform: translate(-50%, -50%);
+  container-type: inline-size;
+}
+
+.world-loading-art {
+  position: absolute;
+  inset: 0;
+  background: center / 100% 100% no-repeat;
+}
+
+/* the picture's own pixels (1024 x 768): the badge spans x 392 to 636 and ends at y 742; the bar is 12 px high under it,
+   centred on y 754, never under 8 px on a small screen */
+.world-loading-bar {
+  position: absolute;
+  left: 38.28%;
+  width: 23.83%;
+  top: 98.18%;
+  height: 8px;
+  height: max(8px, 1.17cqw);
+  transform: translateY(-50%);
+}
+
+.world-loading-gauge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.world-loading-gauge[data-gauge='fill'] {
+  right: auto;
+}
+
+.world-loading-gauge > div {
+  height: 100%;
+  background-repeat: no-repeat;
+  background-size: 300% 100%;
+  background-blend-mode: multiply;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+}
+
+/* CTheme::MakeGaugeVertex: the left and right thirds of the picture as they are, the middle third stretched */
+.world-loading-gauge > div:nth-child(odd) {
+  flex: none;
+  aspect-ratio: 1 / 3;
+}
+
+.world-loading-gauge > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.world-loading-percent {
+  position: absolute;
+  left: 63.1%;
+  top: 98.18%;
+  transform: translateY(-50%);
+  color: #ffffff;
+  font-size: 11px;
+  font-size: max(11px, 1.37cqw);
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 3px #000, 0 1px 2px #000;
+  white-space: nowrap;
+}
+
+/* the words stay for screen readers (and the tests); the picture's badge says it on screen */
+.world-loading .world-status {
+  position: absolute;
+  inset: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .world-leave {
   position: absolute;
   top: max(12px, env(safe-area-inset-top));

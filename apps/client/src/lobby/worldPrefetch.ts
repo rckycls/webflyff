@@ -65,6 +65,11 @@ export class WorldPrefetch {
     private readonly folderOf: (worldId: number) => Promise<string | undefined>,
     private readonly fetchBytes: FetchBytes = lowPriorityFetch,
     private readonly limit = LIMIT,
+    /**
+     * 2026-11-20 (loading screen): the asset key of the picture the loading screen will show for an entry into a world,
+     * fetched first, beside the world's files.
+     */
+    private readonly pictureOf?: (worldId: number) => string,
   ) {}
 
   /** Warms the cache for a character saved in `worldId` at `pos` (D3D); the last run is aborted. Never rejects. */
@@ -97,6 +102,9 @@ export class WorldPrefetch {
     const folder = await this.folderOf(worldId);
     if (folder === undefined || run.stopped) return;
     const store = await this.store();
+    // the loading screen's picture is what the player sees first (none before the convert: nothing to fetch)
+    const picture = this.pictureOf === undefined ? null : store.url(this.pictureOf(worldId));
+    if (picture !== null) void this.fetchBytes(picture, run.abort.signal).catch(() => {});
     const manifest = await store.manifest(folder);
     if (run.stopped) return;
     const center = tileOf(toWebPosition(pos), manifest.mpu);

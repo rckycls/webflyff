@@ -289,6 +289,9 @@ export class MoverViews {
   private readonly hitless = new Set<string>();
   /** Model and motion loads under way; each settles, never rejects. */
   private readonly pending = new Set<Promise<void>>();
+  /** 2026-11-20 (loading screen): the loads put in `pending`, and those that have settled. */
+  private asked = 0;
+  private finished = 0;
   private readonly placeholderGeometry = new CapsuleGeometry(PLACEHOLDER_RADIUS, PLACEHOLDER_HEIGHT - 2 * PLACEHOLDER_RADIUS)
     .translate(0, PLACEHOLDER_HEIGHT / 2, 0);
   private readonly placeholderMaterial = new MeshLambertMaterial({ color: 0x9a9a9a });
@@ -646,8 +649,7 @@ export class MoverViews {
       },
       () => {},
     );
-    this.pending.add(task);
-    void task.finally(() => this.pending.delete(task));
+    this.trackLoad(task);
   }
 
   /**
@@ -680,8 +682,7 @@ export class MoverViews {
       },
       (error: unknown) => this.report(`ground mount: ${messageOf(error)}`),
     );
-    this.pending.add(task);
-    void task.finally(() => this.pending.delete(task));
+    this.trackLoad(task);
   }
 
   /** 2026-11-18: the wolf taken out of the holder and let go; the rider back on its feet, upright, its legs its motion's. */
@@ -1395,9 +1396,23 @@ export class MoverViews {
    */
   private track(work: Promise<void>): Promise<void> {
     const settled = work.catch((error: unknown) => this.report(`mover views: ${messageOf(error)}`));
-    this.pending.add(settled);
-    void settled.finally(() => this.pending.delete(settled));
+    this.trackLoad(settled);
     return settled;
+  }
+
+  /** In `pending` until it settles, and counted for the loading screen (`progress`). */
+  private trackLoad(task: Promise<void>): void {
+    this.pending.add(task);
+    this.asked++;
+    void task.finally(() => {
+      this.pending.delete(task);
+      this.finished++;
+    });
+  }
+
+  /** 2026-11-20 (loading screen): the model and motion loads finished, of all asked for so far. */
+  progress(): { done: number; total: number } {
+    return { done: this.finished, total: this.asked };
   }
 
   /** Says `message` on the overlay, unless the views are disposed: the overlay is the page's, and outlives this entry. */

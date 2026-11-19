@@ -99,7 +99,7 @@ import { CharacterWindow } from './hud/characterWindow';
 import { escapeWindow, refitWindows } from './hud/frame';
 import { cursorProperties, worldCursor } from './hud/cursors';
 import type { WorldHover } from './hud/cursors';
-import { themeUrl } from './hud/art';
+import { themeKey, themeUrl } from './hud/art';
 import { pinScroll } from './hud/scrollPin';
 import type { ScrollPin } from './hud/scrollPin';
 import type { UiArt } from './hud/art';
@@ -126,6 +126,11 @@ import { QuestWindow } from './hud/quests/questWindow';
 import type { QuestWindowState } from './hud/quests/questWindow';
 import { loadQuests } from './quests/questCatalog';
 import { pageAssets } from '../pageAssets';
+import { lowPriorityFetch } from '../lobby/worldPrefetch';
+import { LoadingScreen } from './loading/loadingScreen';
+import { loadingPictures } from './loading/loadingPicture';
+import { serverShare } from './loading/loadProgress';
+import type { LoadParts } from './loading/loadProgress';
 import type { WebItemProp, WebParty } from '@flyffweb/formats';
 import type { MemberView, PartyView } from './hud/party/memberList';
 import { loadParty } from './party/partyCatalog';
@@ -871,6 +876,13 @@ export class WorldScreen {
   private onScreenAt: number | null = null;
   /** This world's stage has been drawn once; reset with the stage (travel). */
   private stageDrawn = false;
+  /** 2026-11-20: the loading screen over this entry (or this change of world) until its fade has run. */
+  private loading: LoadingScreen | undefined;
+  /** 2026-11-20: the picture it shows (a Theme/Default file), and the page's asset store once it is had. */
+  private loadingPicture = '';
+  private pageStore: { url(key: string): string | null } | undefined;
+  /** 2026-11-20: this world's glyph sheets are in (the loading bar's last part). */
+  private windowsIn = false;
   /** 2026-11-11: where the mouse is over the world (normalized device coordinates), for its cursor; null off it. */
   private hoverAt: { x: number; y: number } | null = null;
   private hoverMoved = false;
@@ -926,7 +938,9 @@ export class WorldScreen {
     // menu has Log out instead (`showWorld`)
     this.leaveButton = h('button', { type: 'button', class: 'world-leave' }, 'Leave');
     this.leaveButton.addEventListener('click', () => this.leave());
-    this.element = h('div', { class: 'world' }, h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
+    // 2026-11-20: V15's loading picture and its bar, in place of the words alone
+    const loading = this.openLoading(root.ownerDocument, entry.character.worldId);
+    this.element = h('div', { class: 'world' }, loading.element, this.leaveButton);
     this.element.dataset.loading = ''; // 2026-11-11: CUR_DELAY until the world is first drawn (cursors.ts)
     root.append(this.element);
     this.releaseBrowserGestures = blockBrowserGestures(this.element, this.element.ownerDocument.defaultView ?? window);
@@ -1014,6 +1028,8 @@ export class WorldScreen {
       this.page = page3d(this.element.ownerDocument);
       // the optional catalogs beside the game data (2026-11-04 loading audit: they waited for it), from the page's index
       const store = await pageAssets();
+      this.pageStore = store;
+      if (this.loading !== undefined) this.dressLoading(this.loading);
       const optional = Promise.all([
         loadWorldMap(store, (error) => this.reportOnce(`world map: ${messageOf(error)}`, error)),
         loadQuests(store, (error) => this.reportOnce(`quests: ${messageOf(error)}`, error)),
@@ -1077,7 +1093,7 @@ export class WorldScreen {
     if (event.type === 'transition') {
       this.autoPlay?.onEvent({ kind: 'worldChange' }); // custom (owner 2026-11-15): before the world (and Auto Play) goes
       this.disposeWorld();
-      this.element.replaceChildren(h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
+      this.element.replaceChildren(this.openLoading(this.element.ownerDocument, event.worldId).element, this.leaveButton);
       const folder = this.data!.worlds.get(event.worldId);
       if (folder === undefined || this.services!.store.url(`worlds/${folder}/manifest.json`) === null) this.end(NOT_AVAILABLE_TEXT);
     } else if (event.type === 'entered') {
@@ -1505,6 +1521,47 @@ export class WorldScreen {
     }
   }
 
+  /**
+   * 2026-11-20 (loading screen): a fresh loading screen for an entry into `worldId` (the first, or a change of world),
+   * in place of the last one, with V15's picture for that world (`loadingPictures`) and a bar that reads `loadParts`.
+   */
+  private openLoading(doc: Document, worldId: number): LoadingScreen {
+    this.loading?.dispose();
+    const loading = new LoadingScreen(doc, LOADING_TEXT);
+    this.loading = loading;
+    this.loadingPicture = loadingPictures.take(worldId);
+    this.windowsIn = false;
+    this.dressLoading(loading);
+    loading.start(() => this.loadParts());
+    return loading;
+  }
+
+  /** The loading screen's picture and gauge, once the page's asset store is had (a picture not converted: none). */
+  private dressLoading(loading: LoadingScreen): void {
+    const store = this.pageStore;
+    if (store === undefined) return;
+    loading.setArt({ url: (key) => store.url(key) ?? '', sheets: null });
+    loading.setPicture(store.url(themeKey(this.loadingPicture)));
+  }
+
+  /** What has come of the entry, for the loading bar (`loadFraction`). */
+  private loadParts(): LoadParts {
+    return {
+      server: serverShare(this.session.loadPhase),
+      files: this.data !== undefined,
+      map: this.stage?.progress() ?? null,
+      models: this.views?.progress() ?? null,
+      windows: this.windowsIn,
+      drawn: this.stageDrawn,
+    };
+  }
+
+  /** The next change of world's picture into the browser's cache, quietly, once this world is up. */
+  private warmNextPicture(): void {
+    const url = this.pageStore?.url(themeKey(loadingPictures.peek(0)));
+    if (url) void lowPriorityFetch(url, new AbortController().signal).catch(() => {});
+  }
+
   private async openStage(folder: string, services: SceneServices, generation: number): Promise<void> {
     // 2026-11-15 (post-merge): a room or a guild house in its own indoor light (World3D.cpp:1837-1893), once its world is
     // converted with it; the other indoor worlds keep the noon light for now
@@ -1561,7 +1618,11 @@ export class WorldScreen {
     // the objects' collision shapes come with the tiles from here on, and `ready` waits for them
     stage.ground();
     stage.focus(this.ownAt());
-    const loaded = await Promise.all([stage.ready(), this.views.settled(), this.loadSheets(services, generation)]);
+    const sheets = this.loadSheets(services, generation).then((loaded) => {
+      if (generation === this.stageGeneration) this.windowsIn = true; // 2026-11-20: the loading bar's
+      return loaded;
+    });
+    const loaded = await Promise.all([stage.ready(), this.views.settled(), sheets]);
     if (this.over || generation !== this.stageGeneration) return;
     if (loaded[2]) {
       try {
@@ -1706,6 +1767,11 @@ export class WorldScreen {
     const view = doc.defaultView ?? window;
     this.hudArt!.sheets = sheets;
     this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.hud!.element);
+    // 2026-11-20: the loading screen stays over it all until the world has been drawn, then fades (LoadingScreen)
+    if (this.loading !== undefined && !this.loading.isDisposed) {
+      this.element.append(this.loading.element);
+      this.loading.cover();
+    }
     // Piece 7 M2: the charge gauge, over the canvas and under the windows (CMover::RenderGauge draws it with the world)
     this.chargeGauge = new ChargeGauge(this.hudArt!, doc);
     this.element.insertBefore(this.chargeGauge.element, this.hud!.element);
@@ -3751,7 +3817,10 @@ export class WorldScreen {
         const generation = this.stageGeneration;
         const inView = Promise.all([views.settled(), this.dropModels?.settled(), this.ctrlModels?.settled()]);
         void Promise.race([inView, new Promise((resolve) => setTimeout(resolve, PRELOAD_WAIT_MS))]).then(() => {
-          if (generation === this.stageGeneration && !this.over) stage.startPreloading();
+          if (generation === this.stageGeneration && !this.over) {
+            stage.startPreloading();
+            this.warmNextPicture(); // 2026-11-20
+          }
         });
       }
       // the map around the own mover, and the chase camera of the last rules step (of now, before the first)
@@ -6168,6 +6237,7 @@ this.follow(world, stage);
     // the next world's stage is drawn anew and starts its own ring (`onScreenAt` stays the first world's)
     this.stageDrawn = false;
     this.preloadStarted = false;
+    this.windowsIn = false; // 2026-11-20
     this.stopOwnMover();
     this.itemActions?.cancel();
     this.element.classList.remove('world-modal', 'world-menu-open');
@@ -6393,6 +6463,7 @@ this.follow(world, stage);
     this.releaseBrowserGestures();
     this.stopAsking();
     this.disposeWorld();
+    this.loading?.dispose(); // 2026-11-20
     this.page?.holder.remove();
     this.element.remove();
     this.unregister();
@@ -6426,6 +6497,7 @@ this.follow(world, stage);
     this.worldMap?.close();
     this.audio?.stopWorld();
     this.stopAsking(); // nothing is left to lose by closing the page
+    this.loading?.stop(); // 2026-11-20: the loading screen stays as it is, under the box
     const doc = this.element.ownerDocument;
     // a drop while a new world loads has no HUD: the box takes its pictures from the store
     const art: UiArt = this.hudArt ?? { url: (key) => this.services?.store.url(key) ?? '', sheets: null };

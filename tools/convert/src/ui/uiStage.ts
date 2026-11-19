@@ -74,6 +74,10 @@ export const THEME_FILES: readonly string[] = [
   // Default.thm wallpaper and APP_LOGIN / APP_SELECT_SERVER / APP_SELECT_CHAR (WndTitle.cpp).
   'Screen.bmp', 'WndSelectChar.tga', 'ButtLogin.bmp', 'ButtBack.tga', 'ButtNext.tga',
   'ButtCreate.tga', 'ButtDelete.tga', 'ButtAccept.tga',
+  // 2026-11-20 (loading screen): the pictures CDPClient::OnReplace draws while a world loads (DPClient.cpp:2274-2302),
+  // the random three and the worlds' own (MapLoading.tga and 5 to 7 are never drawn)
+  'MapLoading2.tga', 'MapLoading3.tga', 'MapLoading4.tga', 'MapLoading_GuildWar.tga', 'MapLoading_Ominous.tga',
+  'MapLoading_Ominous_1.tga', 'MapLoading_DreadfulCave.tga', 'MapLoading_Guildhouse.tga',
   // CWndNavigator (WndField.cpp:9848): native controls, arrow, marker sheet and indoor fog.
   'ButtNavLeft.tga', 'ButtNavZoomIn.tga', 'ButtNavZoomOut.tga', 'ImgNavArrow.bmp', 'ImgNavObj.bmp', 'NavDunFog.tga',
   'ButtTeleport.bmp',

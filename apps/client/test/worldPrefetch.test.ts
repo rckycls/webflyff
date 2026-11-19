@@ -32,7 +32,7 @@ const tile = (x: number, y: number, models: number[], textures: number[]): WebTi
   x, y, objects: models.map((model) => ({ model, matrix: new Float32Array(16) })), layers: textures.map((texture) => ({ texture })),
 }) as unknown as WebTile;
 
-function rig(tiles: Map<string, WebTile>, worlds = new Map([[1, 'wdmadrigal']])) {
+function rig(tiles: Map<string, WebTile>, worlds = new Map([[1, 'wdmadrigal']]), pictureOf?: (worldId: number) => string) {
   const asked: string[] = [];
   const store: PrefetchStore = {
     manifest: async () => MANIFEST,
@@ -53,7 +53,7 @@ function rig(tiles: Map<string, WebTile>, worlds = new Map([[1, 'wdmadrigal']]))
     if (url.endsWith('obj_house.glb')) return glb(['textures/obj/house.ktx2', 'textures/obj/roof.ktx2']);
     if (url.endsWith('obj_tree.glb')) return glb(['textures/obj/leaf.ktx2', 'textures/obj/roof.ktx2', 'textures/missing.ktx2']);
     return new ArrayBuffer(8);
-  }, 3);
+  }, 3, pictureOf);
   return { prefetch, asked, fetched, most: () => most };
 }
 
@@ -90,6 +90,13 @@ describe('WorldPrefetch', () => {
     r.prefetch.stop();
     await second;
     expect(r.fetched.length - before).toBeLessThanOrEqual(3);
+  });
+
+  it("fetches the loading screen's picture first (2026-11-20)", async () => {
+    const r = rig(new Map([['1_1', tile(1, 1, [0], [0])]]), new Map([[1, 'wdmadrigal']]), (worldId) => `ui/maploading${worldId + 1}.png`);
+    await r.prefetch.start(1, AT);
+    expect(r.fetched[0]).toBe('/assets/ui/maploading2.png');
+    expect(r.fetched.filter((url) => url.includes('maploading'))).toHaveLength(1);
   });
 
   it('a world the catalog has not: nothing, and no throw', async () => {

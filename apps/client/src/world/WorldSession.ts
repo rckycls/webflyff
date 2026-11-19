@@ -362,6 +362,8 @@ export class WorldSession {
   private ownPlayerId(): number { return this.entry.character.playerId; }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';
+  /** 2026-11-20 (loading screen): how far the entry is, for its bar (`serverShare`). */
+  get loadPhase(): Phase { return this.phase; }
   private started = false;
   private cache: PacketChannel | undefined;
   /** JOIN, made by `start` with PRE_JOIN so that a name the wire cannot carry fails before anything is opened. */
