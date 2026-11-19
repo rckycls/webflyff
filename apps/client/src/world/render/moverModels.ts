@@ -23,7 +23,7 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { GameData } from '../gameData';
 import { heldModels } from './looks';
 import type { MoverLook } from './looks';
-import { applyWingFit, playWing, wingFit } from './wingCapes';
+import { applyWingFit, idleOf, playWing, wingFit } from './wingCapes';
 import type { WingMotions } from './wingCapes';
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -210,8 +210,9 @@ async function wingCape(
   const skeleton = scene.getObjectByName('skeleton');
   if (skeleton !== undefined) skeleton.name = 'wing skeleton';
   const { stand, walk } = await wingClips(services, model);
-  const wing: WingMotions = { mixer: new AnimationMixer(scene), stand, walk, playing: null };
-  playWing(wing, 'stand', 0);
+  const idle = stand === null ? null : idleOf(stand); // 2026-11-20: near still while the wearer stands idle
+  const wing: WingMotions = { mixer: new AnimationMixer(scene), stand, walk, idle, playing: null };
+  playWing(wing, 'idle', 0);
   applyWingFit(scene, wingFit(model, look.skeleton === skeletonKey('female') ? 'female' : 'male'));
   const item = new Group();
   item.name = 'wing cape';
@@ -286,7 +287,7 @@ export interface HeldItem {
   slot: HeldSlot;
   /** 2026-11-09: the weapon part it is, for its glow (`HeldModel.hand`). */
   hand?: 'right' | 'left' | null;
-  /** 2026-11-17: a wing cape's (slot `back`) motions, posed at its stand's first frame; `playWing` flaps it. */
+  /** 2026-11-17: a wing cape's (slot `back`) motions, posed at its idle's first frame (the stand's); `playWing` flaps it. */
   wing?: WingMotions;
   /** Gives the textures back to the cache and disposes the geometry and materials. Safe to call twice. */
   release(): void;

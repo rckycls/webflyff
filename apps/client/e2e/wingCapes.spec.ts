@@ -82,33 +82,33 @@ test.beforeEach(() => {
   test.skip(!hasCapes(), 'the catalog lacks the wing capes: run the gear sync after `npm run convert -- --only data`');
 });
 
-test('wing capes: drawn on the backs of Webby and of eleven players of both bodies, standing; a flier\'s is hidden', async ({ page }, info) => {
+test('wing capes: drawn on the backs of Webby and of eleven players of both bodies, standing idle; a flier\'s is hidden', async ({ page }, info) => {
   await playGateway(page, script(), LISTED);
   await enterFlaris(page);
   await expect.poll(async () => (await capesOf(page)).length, ON_FRAMES).toBe(13);
   const capes = await capesOf(page);
-  expect(capes.find((c) => c.objectId === SELF_ID)).toMatchObject({ itemId: ANGELIC, drawn: true, playing: 'stand' });
+  expect(capes.find((c) => c.objectId === SELF_ID)).toMatchObject({ itemId: ANGELIC, drawn: true, playing: 'idle' });
   for (const [i, mover] of ROW.entries()) {
-    expect(capes.find((c) => c.objectId === mover.objectId)).toMatchObject({ itemId: WING_CAPES[i], drawn: true, playing: 'stand' });
+    expect(capes.find((c) => c.objectId === mover.objectId)).toMatchObject({ itemId: WING_CAPES[i], drawn: true, playing: 'idle' });
   }
   expect(capes.find((c) => c.objectId === FLIER_ID)).toMatchObject({ drawn: false });
-  await page.waitForTimeout(1500); // the wings flap a little
+  await page.waitForTimeout(1500); // the wings breathe a little in their idle
   await page.screenshot({ path: info.outputPath('standing.png') });
   expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 });
 
-test('wing capes: running plays the wings\' walk, standing again their stand', async ({ page }, info) => {
+test('wing capes: running plays the wings\' walk, standing again their near-still idle', async ({ page }, info) => {
   test.skip(isTouch(), "W is the PC's key; the phone's pictures are of the capes standing");
   await playGateway(page, script(), LISTED);
   await enterFlaris(page);
   const own = async () => (await capesOf(page)).find((c) => c.objectId === SELF_ID);
-  await expect.poll(own, ON_FRAMES).toMatchObject({ playing: 'stand' });
+  await expect.poll(own, ON_FRAMES).toMatchObject({ playing: 'idle' });
   await page.keyboard.down('w');
   await expect.poll(async () => (await own())?.playing, ON_FRAMES).toBe('walk');
   await page.waitForTimeout(600);
   await page.screenshot({ path: info.outputPath('running.png') });
   await page.keyboard.up('w');
-  await expect.poll(async () => (await own())?.playing, ON_FRAMES).toBe('stand');
+  await expect.poll(async () => (await own())?.playing, ON_FRAMES).toBe('idle');
   expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 });
 
