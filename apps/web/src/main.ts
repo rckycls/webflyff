@@ -6,6 +6,7 @@ import { loadItemCatalog } from './admin/itemCatalog';
 import { sqlAdminStore } from './admin/sqlAdminStore';
 import { startAdmin } from './admin/startAdmin';
 import { parseWebConfig, type WebConfig } from './config';
+import { DiscordCache, loadDiscord } from './discord';
 import { HourlyLimit } from './hourlyLimit';
 import { consoleLogger } from './log';
 import { RefusalLog } from './refusalLog';
@@ -65,6 +66,11 @@ const clock = () => Date.now();
 const store = sqlAccountStore(config.sql);
 // Support / VIP (vip/startVip.ts): off without web.config.json's vip section, never stops the site
 const vip = startVip(config, consoleLogger, clock);
+// The home page's Discord button (discord.ts): off without web.config.json's discord section, never stops the site
+if (config.discordProblem !== undefined) consoleLogger.warn(`discord: off: ${config.discordProblem}`);
+const discordConfig = config.discord;
+const discord = discordConfig === undefined ? undefined
+  : new DiscordCache(() => loadDiscord(discordConfig, fetch), clock, consoleLogger);
 const server = createWebServer({
   config,
   store,
@@ -80,6 +86,7 @@ const server = createWebServer({
   status: new StatusCache(() => loadStatus(config, store), clock),
   siege: new SiegeCache(store, clock),
   vip: vip.routes,
+  discord,
 });
 
 server.once('error', (error: Error) => fail(`web: cannot listen on ${config.listen.host}:${config.listen.port}: ${error.message}`, 1));

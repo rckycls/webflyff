@@ -13,6 +13,7 @@ import { RefusalLog } from '../src/refusalLog';
 import { createWebServer } from '../src/server';
 import { SiegeCache } from '../src/siege';
 import { SignUpBook } from '../src/signUpBook';
+import { DiscordCache } from '../src/discord';
 import { StatusCache } from '../src/status';
 import { TicketBook } from '../src/ticket';
 import { PREREG_OFF, type PreregRule } from '@flyffweb/protocol';
@@ -28,7 +29,7 @@ afterEach(() => { for (const server of servers.splice(0)) server.close(); });
 
 interface Started { port: number; lines: string[]; store: { calls: string[][] }; setNow(t: number): void }
 
-async function start(config: WebConfig = baseConfig, prereg: PreregRule = PREREG_OFF): Promise<Started> {
+async function start(config: WebConfig = baseConfig, prereg: PreregRule = PREREG_OFF, discord?: DiscordCache): Promise<Started> {
   let now = 1_000_000;
   const clock = () => now;
   const lines: string[] = [];
@@ -52,6 +53,7 @@ async function start(config: WebConfig = baseConfig, prereg: PreregRule = PREREG
     refusals: new RefusalLog({ info: (line) => lines.push(line), warn: (line) => lines.push(line) }),
     signUps: new SignUpBook(undefined, { info: (line) => lines.push(line), warn: (line) => lines.push(line) }),
     prereg: () => prereg,
+    discord,
   });
   servers.push(server);
   server.listen(0, '127.0.0.1');
@@ -181,4 +183,15 @@ it('limits tickets per address', async () => {
 it('reads the path without its query', async () => {
   const site = await start();
   expect((await call(site.port, 'GET', '/api/status?x=1')).status).toBe(200);
+});
+
+it('serves the Discord answer, and off without one', async () => {
+  const answer = { url: 'https://discord.gg/abc', name: 'OSFlyff', online: 42, members: 310 };
+  const quiet = { info: () => {}, warn: () => {} };
+  const on = await start(baseConfig, PREREG_OFF, new DiscordCache(async () => answer, () => 0, quiet));
+  expect(await call(on.port, 'GET', '/api/discord')).toMatchObject({ status: 200, body: answer, headers: { 'cache-control': 'no-store' } });
+  const invalid = await start(baseConfig, PREREG_OFF, new DiscordCache(async () => 'invalid', () => 0, quiet));
+  expect(await call(invalid.port, 'GET', '/api/discord')).toMatchObject({ status: 404, body: { error: 'off' } });
+  const off = await start();
+  expect(await call(off.port, 'GET', '/api/discord')).toMatchObject({ status: 404, body: { error: 'off' } });
 });

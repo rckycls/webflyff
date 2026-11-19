@@ -55,3 +55,12 @@ it('refuses a missing file section', () => {
   const { sql: _sql, ...rest } = example;
   expect(() => parseWebConfig(rest)).toThrow('sql');
 });
+
+it('keeps Discord off without a discord section, and off with a bad one without stopping the site', () => {
+  expect(parseWebConfig(example)).toMatchObject({ discord: undefined, discordProblem: undefined });
+  const good = parseWebConfig({ ...example, discord: { invite: 'https://discord.gg/abc' } });
+  expect(good).toMatchObject({ discord: { code: 'abc', url: 'https://discord.gg/abc' }, discordProblem: undefined });
+  const bad = parseWebConfig({ ...example, discord: { invite: 'https://evil.com/x' } });
+  expect(bad.discord).toBeUndefined();
+  expect(bad.discordProblem).toMatch(/^discord\.invite/);
+});
