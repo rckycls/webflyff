@@ -78,4 +78,28 @@ FlyffWeb's shop had no count boxes (a count field + Buy/Sell), so Neuz's are por
 
 ## Tests run
 
-TEST_RESULTS
+All in the worktree, Chromium only, port 5192.
+
+```powershell
+npx tsc --noEmit -p apps/client
+npx tsc --noEmit -p apps/client/tsconfig.node.json
+```
+Both clean.
+
+```powershell
+npx vitest run apps/client/test/hud.test.ts apps/client/test/minimap.test.ts apps/client/test/motionWindow.test.ts apps/client/test/optionWindow.test.ts apps/client/test/partyWindow.test.ts apps/client/test/petWindow.test.ts apps/client/test/questTracker.test.ts apps/client/test/questWindow.test.ts apps/client/test/shopVipPrice.test.ts apps/client/test/shopWindow.test.ts apps/client/test/skillWindow.test.ts apps/client/test/frameResizeMemory.test.ts apps/client/test/dropWindows.test.ts apps/client/test/shopConfirmWindows.test.ts apps/client/test/inventoryWindow.test.ts apps/client/test/frameNoCaption.test.ts apps/client/test/chatRules.test.ts apps/client/test/chatWindow.test.ts
+```
+18 files, 295 passed. New: `dropWindows.test.ts`, `shopConfirmWindows.test.ts`, `frameResizeMemory.test.ts`.
+
+```powershell
+$env:E2E_CLIENT_PORT='5192'; npx playwright test -c apps/client/playwright.config.ts --project=chromium --project=phone apps/client/e2e/mouseDragUi.spec.ts apps/client/e2e/items.spec.ts apps/client/e2e/mobileUx.spec.ts apps/client/e2e/talking.spec.ts apps/client/e2e/friends.spec.ts apps/client/e2e/windows.spec.ts
+```
+30 passed, 5 skipped, 1 failed: the new shop-drag test sold before the server answered the buy (the shop waits for
+it). The test was fixed (it now sends the answer first) and `mouseDragUi.spec.ts` run again: 3 passed, 3 skipped (the
+phone skips the desktop-only drags).
+
+- Changed specs: `items` (the drop box is Neuz's count box, filled with the stack), `mobileUx` (the phone card's Drop
+  opens Neuz's box).
+- New: `mouseDragUi.spec.ts` (shop buy/sell drags, penya refused, one item's Yes/No, Navigator resize and its most, the
+  bag's kept place, the Navigator's kept size).
+- Not run here: the full e2e suite; a real phone or iPhone.
