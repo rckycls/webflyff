@@ -8,14 +8,24 @@ import { WindowFrame } from './frame';
 export type NavigatorKind = 'player' | 'party' | 'npc' | 'monster';
 export interface NavigatorMarker { id: number; kind: NavigatorKind; name: string; pos: Vec3 }
 const WIDTH = 132, HEIGHT = 128;
+/** The window's size (resdata.inc APP_NAVIGATOR 144 x 160); its client area is 12 narrower and 32 lower (frame.ts). */
+const FRAME_WIDTH = 144, FRAME_HEIGHT = 160;
+/**
+ * 2026-11-20 (mouse-drag-ui): WBS_THICKFRAME: its edges drag from 96 x 112 to 192 x 208 (`CWndNavigator::SetWndRect`,
+ * WndField.cpp:10085-10090); desktop only.
+ */
+const LEAST = { width: 16 * 6, height: 16 * 7 };
+const MOST = { width: 16 * 12, height: 16 * 13 };
+/** The zoom buttons' tops at the first size; they keep to the bottom as it changes (`OnSize`, WndField.cpp:10091-10097). */
+const ZOOM_IN_TOP = 54, ZOOM_OUT_TOP = 70;
 /** CWndNavigator::OnEraseBkgnd: native positive-z north, with the own player at the center. */
-export function navigatorPoint(pos: Vec3, center: Vec3, zoom: number, tileMeters: number): { x: number; y: number } {
-  return pointInto({ x: 0, y: 0 }, pos, center, zoom, tileMeters);
+export function navigatorPoint(pos: Vec3, center: Vec3, zoom: number, tileMeters: number, width = WIDTH, height = HEIGHT): { x: number; y: number } {
+  return pointInto({ x: 0, y: 0 }, pos, center, zoom, tileMeters, width, height);
 }
-/** `navigatorPoint` into `out`. */
-function pointInto(out: { x: number; y: number }, pos: Vec3, center: Vec3, zoom: number, tileMeters: number): { x: number; y: number } {
-  out.x = WIDTH / 2 + (pos[0] - center[0]) * zoom / tileMeters;
-  out.y = HEIGHT / 2 - (pos[2] - center[2]) * zoom / tileMeters;
+/** `navigatorPoint` into `out`, on a map `width` x `height`. */
+function pointInto(out: { x: number; y: number }, pos: Vec3, center: Vec3, zoom: number, tileMeters: number, width: number, height: number): { x: number; y: number } {
+  out.x = width / 2 + (pos[0] - center[0]) * zoom / tileMeters;
+  out.y = height / 2 - (pos[2] - center[2]) * zoom / tileMeters;
   return out;
 }
 
@@ -54,15 +64,24 @@ export class Minimap {
   /** A tile's key and its picture's URL, by `tz * width + tx`. */
   private readonly tileSources = new Map<number, { key: string; src: string | null }>();
   /** What an image or a marker was last placed with: left, top and size (an image) or sprite (a marker). */
-  private readonly placedAt = new WeakMap<HTMLElement, [number, number, number]>();
+  private placedAt = new WeakMap<HTMLElement, [number, number, number]>();
   private heading = NaN;
+  /** 2026-11-20 (mouse-drag-ui): the map's size, the client area's (its edges drag). */
+  private mapWidth = WIDTH;
+  private mapHeight = HEIGHT;
+  private readonly zoomButtons: HTMLButtonElement[] = [];
   constructor(private readonly art: UiArt, private readonly manifest: WorldManifest, private readonly folder: string,
     private readonly url: (key: string) => string | null, private readonly doc: Document = document,
     /** 2026-11-15: the mask over each tile (`minimapMaskKey`), or none; a key the index lacks is drawn as nothing. */
     maskKey: string | null = null) {
     // 2026-11-13 (owner): 30% smaller on a phone (0.85 x 0.7)
-    this.frame = new WindowFrame('Navigator', art, { width: 144, height: 160, mobileScale: 0.6 }, doc);
+    this.frame = new WindowFrame('Navigator', art, {
+      width: FRAME_WIDTH, height: FRAME_HEIGHT, mobileScale: 0.6, resize: LEAST, resizeMax: MOST,
+    }, doc);
     this.frame.element.classList.add('hud-navigator'); this.frame.escapeCloses = false;
+    // 2026-11-20 (mouse-drag-ui): its place and size kept for the next time (regInfo.dat)
+    this.frame.rememberAs = 'APP_NAVIGATOR';
+    this.frame.onResize = (width, height) => this.resized(width, height);
     this.map = doc.createElement('div'); this.map.className = 'navigator-map';
     this.map.setAttribute('aria-label', 'Local map');
     this.map.style.backgroundImage = themeUrl(art, 'NavDunFog.tga');
@@ -90,22 +109,37 @@ export class Minimap {
     this.maskLayer = doc.createElement('div'); this.maskLayer.className = 'navigator-masks';
     this.filterButton = control('filter', 'Navigator filters', 'ButtNavLeft.tga', 1, () => { this.filterMenu.hidden = !this.filterMenu.hidden; });
     this.filterButton.disabled = manifest.indoor === true;
-    control('zoom-in', 'Zoom in', 'ButtNavZoomIn.tga', 54, () => { this.zoomNow = Math.min(352, this.zoomNow + 32); });
-    control('zoom-out', 'Zoom out', 'ButtNavZoomOut.tga', 70, () => { this.zoomNow = Math.max(128, this.zoomNow - 32); });
+    this.zoomButtons.push(
+      control('zoom-in', 'Zoom in', 'ButtNavZoomIn.tga', ZOOM_IN_TOP, () => { this.zoomNow = Math.min(352, this.zoomNow + 32); }),
+      control('zoom-out', 'Zoom out', 'ButtNavZoomOut.tga', ZOOM_OUT_TOP, () => { this.zoomNow = Math.max(128, this.zoomNow - 32); }),
+    );
     this.frame.body.append(this.filterMenu);
     this.map.append(this.maskLayer, this.destination, this.arrow);
     this.frame.body.addEventListener('pointerdown', event => event.stopPropagation());
     this.map.addEventListener('click', event => {
       if (this.center === undefined) return;
-      const rect = this.map.getBoundingClientRect(), scale = rect.width / WIDTH;
+      const rect = this.map.getBoundingClientRect(), scale = rect.width / this.mapWidth;
       const units = manifest.mapSize * manifest.mpu / this.zoom;
-      const x = this.center[0] + ((event.clientX - rect.left) / scale - WIDTH / 2) * units;
-      const z = this.center[2] - ((event.clientY - rect.top) / scale - HEIGHT / 2) * units;
+      const x = this.center[0] + ((event.clientX - rect.left) / scale - this.mapWidth / 2) * units;
+      const z = this.center[2] - ((event.clientY - rect.top) / scale - this.mapHeight / 2) * units;
       if (x < 0 || z < 0 || x >= manifest.size[0] * manifest.mapSize * manifest.mpu || z >= manifest.size[1] * manifest.mapSize * manifest.mpu) return;
       this.navigation = { pos: [x, this.center[1], z], expires: performance.now() + 200 * 1000 / 60 };
     });
   }
   get zoom(): number { return this.zoomNow; }
+  /**
+   * 2026-11-20 (mouse-drag-ui): an edge dragged (`OnSize`, WndField.cpp:10091-10097): the map fills the new client area,
+   * the player still at its middle, and the zoom buttons keep to its bottom (never over the filter's button).
+   */
+  private resized(width: number, height: number): void {
+    this.mapWidth = width - (FRAME_WIDTH - WIDTH);
+    this.mapHeight = height - (FRAME_HEIGHT - HEIGHT);
+    const zoomIn = Math.max(16, ZOOM_IN_TOP + this.mapHeight - HEIGHT);
+    this.zoomButtons[0]!.style.top = `${zoomIn}px`;
+    this.zoomButtons[1]!.style.top = `${zoomIn + ZOOM_OUT_TOP - ZOOM_IN_TOP}px`;
+    this.placedAt = new WeakMap();
+    this.heading = NaN;
+  }
   open(): void { this.frame.open({ x: this.frame.element.parentElement?.clientWidth ?? 0, y: 0 }); }
   toggle(): void { if (this.frame.isOpen) this.frame.close(); else this.open(); }
   update(center: Vec3, heading: number, markers: readonly NavigatorMarker[]): void {
@@ -124,7 +158,7 @@ export class Minimap {
           image = this.doc.createElement('img'); image.src = src; image.alt = ''; image.draggable = false;
           this.images.set(key, image); this.map.prepend(image);
         }
-        const left = WIDTH / 2 + (tx * meters - center[0]) * ratio, top = HEIGHT / 2 - ((tz + 1) * meters - center[2]) * ratio;
+        const left = this.mapWidth / 2 + (tx * meters - center[0]) * ratio, top = this.mapHeight / 2 - ((tz + 1) * meters - center[2]) * ratio;
         if (this.moved(image, left, top, this.zoom)) {
           image.style.cssText = `left:${left}px;top:${top}px;width:${this.zoom}px;height:${this.zoom}px`;
           // 2026-11-15: the siege's mask over the tile, as big (m_size), at alpha 200 (WndField.cpp:9240-9246)
@@ -142,8 +176,8 @@ export class Minimap {
     const shown = this.shown; shown.clear();
     if (!this.manifest.indoor) for (const marker of markers) {
       if (!this.filters.has(marker.kind)) continue;
-      const point = pointInto(this.point, marker.pos, center, this.zoom, meters);
-      if (!Number.isFinite(point.x + point.y) || point.x < 2 || point.y < 2 || point.x > WIDTH - 2 || point.y > HEIGHT - 2) continue;
+      const point = pointInto(this.point, marker.pos, center, this.zoom, meters, this.mapWidth, this.mapHeight);
+      if (!Number.isFinite(point.x + point.y) || point.x < 2 || point.y < 2 || point.x > this.mapWidth - 2 || point.y > this.mapHeight - 2) continue;
       shown.add(marker.id); let dot = this.dots.get(marker.id);
       if (dot === undefined) {
         dot = this.doc.createElement('span'); dot.className = 'navigator-marker'; dot.dataset.marker = String(marker.id);
@@ -164,7 +198,7 @@ export class Minimap {
     }
     this.destination.hidden = this.navigation === undefined || this.navigation.expires <= performance.now();
     if (!this.destination.hidden) {
-      const point = pointInto(this.point, this.navigation!.pos, center, this.zoom, meters);
+      const point = pointInto(this.point, this.navigation!.pos, center, this.zoom, meters, this.mapWidth, this.mapHeight);
       this.destination.style.left = `${point.x}px`; this.destination.style.top = `${point.y}px`;
       this.destination.style.backgroundPosition = `${-(Math.floor(performance.now() / 120) % 4) * 16}px 0`;
     }

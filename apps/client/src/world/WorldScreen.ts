@@ -96,7 +96,7 @@ import { TargetBuffs } from './hud/targetBuffs';
 import { CameraControls } from './cameraControls';
 import { blockBrowserGestures } from './browserGestures';
 import { CharacterWindow } from './hud/characterWindow';
-import { escapeWindow, refitWindows } from './hud/frame';
+import { escapeWindow, refitWindows, rememberWindows } from './hud/frame';
 import { cursorProperties, worldCursor } from './hud/cursors';
 import type { WorldHover } from './hud/cursors';
 import { themeUrl } from './hud/art';
@@ -1704,6 +1704,8 @@ export class WorldScreen {
     const { holder, renderer } = this.page!;
     const doc = this.element.ownerDocument;
     const view = doc.defaultView ?? window;
+    // 2026-11-20 (mouse-drag-ui): the windows keep their places for the next time (regInfo.dat; frame.ts, desktop only)
+    rememberWindows(doc, (() => { try { return view.localStorage; } catch { return null; } })());
     this.hudArt!.sheets = sheets;
     this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.hud!.element);
     // Piece 7 M2: the charge gauge, over the canvas and under the windows (CMover::RenderGauge draws it with the world)

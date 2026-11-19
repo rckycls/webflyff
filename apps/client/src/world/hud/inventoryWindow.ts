@@ -120,6 +120,8 @@ export class InventoryWindow {
     private readonly actions: InventoryActions, private readonly doc: Document = document) {
     this.frame = new WindowFrame('Inventory', art, { width: 240, height: 464, texture: 'WndInventory3D.tga' }, doc);
     this.frame.element.classList.add('hud-inventory');
+    // 2026-11-20 (mouse-drag-ui): its place kept for the next time (regInfo.dat, frame.ts `rememberAs`)
+    this.frame.rememberAs = 'APP_INVENTORY';
     this.frame.element.style.setProperty('--classic-inventory-art', themeUrl(art, 'WndInventory3D.tga'));
     // 2026-11-05: the hammer cursor (ui/anvil.png, the converter's from Client/Cursor/anvil.cur), its hotspot the top left
     const hammer = art.url('ui/anvil.png');

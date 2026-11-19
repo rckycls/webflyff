@@ -249,6 +249,8 @@ export class CharacterWindow {
       ? { width: 480, height: 320, mobileScale: 1, fitWhole: true }
       : { width: WIDTH, height: HEIGHT }, doc);
     frame.element.classList.add('hud-character');
+    // 2026-11-20 (mouse-drag-ui): its place kept for the next time (regInfo.dat, frame.ts `rememberAs`)
+    frame.rememberAs = 'APP_CHARACTER3';
     frame.element.classList.toggle('hud-character-landscape', mobile);
     frame.onClose = () => {
       // Destroy: the page and its counts go, and the confirm box's Yes would find no page (:4490-4500)
