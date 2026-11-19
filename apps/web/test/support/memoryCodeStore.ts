@@ -240,8 +240,3 @@ export class MemoryCodeStore implements CodeSiteStore, CodeAdminStore, CodeMailS
     return { result: 1, idPlayer: to.idPlayer, characterName: to.name };
   }
 }
-
-/** One side of the store, with the `close()` the services call. */
-export function closable<T extends object>(store: T): T & { close(): Promise<void> } {
-  return Object.assign(Object.create(store) as T, { close: async () => {} });
-}

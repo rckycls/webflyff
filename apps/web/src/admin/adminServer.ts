@@ -33,6 +33,7 @@ import type { PortState } from './serverState';
 import { matchTotp } from './totp';
 import { MAX_IMAGE_BODY_BYTES } from '../vip/images';
 import type { VipFiles } from '../vip/vipFiles';
+import type { CodeAdminStore } from '../codes/codeStore';
 import type { VipAdminStore } from '../vip/vipStore';
 
 export interface AdminContext { session: AdminSession; address: string }
@@ -54,7 +55,8 @@ export interface AdminDeps {
   /** The Accounts and Characters lists' pages, kept a short time (pageCache.ts). */
   pages: PageCache;
   /** Support / VIP's store and pictures; `undefined` while it is off (web.config.json has no good vip section). */
-  vip?: { store: VipAdminStore; files: VipFiles };
+  /** `codes` (2026-11-20, redeem codes): the Codes view's store, with the admin section. */
+  vip?: { store: VipAdminStore; files: VipFiles; codes?: CodeAdminStore };
 }
 
 export const ADMIN_BODY_LIMIT = 16 * 1024;

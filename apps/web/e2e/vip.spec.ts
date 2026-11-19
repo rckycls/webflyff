@@ -130,3 +130,20 @@ test('changes a tier\'s dollar and peso prices that players then see, and puts t
   await save.click();
   await expect.poll(pricesOnSite).toEqual([200, 11500]);
 });
+
+test('2026-11-20: makes an everyone code with a word, lists it, and turns it off', async ({ page }, info) => {
+  await openTab(page, 'VIP');
+  await section(page).getByRole('button', { name: 'Codes', exact: true }).click();
+  const view = section(page).locator('.vip-view:not([hidden])');
+  const word = `E2E${info.project.name.replace(/\W/g, '').toUpperCase().slice(0, 6)}${Date.now() % 100000}`;
+  await view.getByLabel('Code name').fill(`E2E ${word}`);
+  await view.getByLabel('VIP level').selectOption('1');
+  await view.getByLabel('VIP days').fill('3');
+  await view.getByLabel('Your own word').fill(word);
+  await view.getByRole('button', { name: 'Make', exact: true }).click();
+  await expect(view.getByText(`Made the code ${word}.`)).toBeVisible();
+  const card = view.locator('.card').filter({ hasText: `E2E ${word} · On` });
+  await expect(card).toContainText('VIP 1 for 3 days');
+  await card.getByRole('button', { name: 'Turn off' }).click();
+  await expect(view.locator('.card').filter({ hasText: `E2E ${word} · Off` })).toBeVisible();
+});

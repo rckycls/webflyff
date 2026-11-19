@@ -27,6 +27,9 @@ import { hashAdminPassword } from '../src/admin/password';
 import { SessionBook } from '../src/admin/sessions';
 import { totpCode, totpStep } from '../src/admin/totp';
 import { HourlyLimit } from '../src/hourlyLimit';
+import { deliverOne } from '../src/codes/codeDelivery';
+import { newKey } from '../src/codes/codeKeys';
+import { CODE_FAILS_PER_ADDRESS_HOUR, CODE_FAILS_PER_HOUR, CODE_REDEEMS_PER_HOUR, codeRoutes } from '../src/codes/siteCodes';
 import { RefusalLog } from '../src/refusalLog';
 import { createWebServer } from '../src/server';
 import { SiegeCache } from '../src/siege';
@@ -38,6 +41,7 @@ import { LOGIN_FAILS_PER_HOUR, LOGINS_PER_HOUR, PLAYER_SESSION_IDLE_MS, PLAYER_S
 import { VipFiles } from '../src/vip/vipFiles';
 import { testConfig } from '../test/support/adminDeps';
 import { MemoryAdminStore, memoryAccount, memoryCharacter } from '../test/support/memoryAdminStore';
+import { MemoryCodeStore } from '../test/support/memoryCodeStore';
 import { MemoryVipStore, siteView } from '../test/support/memoryVipStore';
 import { PNG_BASE64 } from '../test/support/vipPictures';
 import { DEMO_PASSWORD, DEMO_SECRET, DEMO_USER } from './adminDemoLogin';
@@ -91,6 +95,20 @@ for (const [account, level, reference, currency] of [['tester1', 2, 'GC-1001-200
 }
 await vipStore.addQr({ label: 'GCash', accountName: 'R. C.', note: 'Send the exact amount.', imageFile: await vipFiles.save('qr', picture, 'png'), on: true, order: 1 });
 
+// 2026-11-20 (redeem codes): an everyone VIP 2 code with an item, and a batch of 3 one-use item codes
+const codeStore = new MemoryCodeStore(vipStore, [
+  { account: 'tester1', idPlayer: '0000002', name: 'Alt' }, { account: 'tester2', idPlayer: '0000003', name: 'Busy' },
+], now);
+const inAWeek = new Date(Date.now() + 7 * 86_400_000).toISOString();
+await codeStore.add({
+  label: 'Discord launch', kind: 'E', vipLevel: 2, vipDays: 7, maxUses: 100, expiresAt: inAWeek, items: [{ itemId: 21, count: 1 }],
+  keys: ['WELCOME2026'], accounts: [], admin: 'Poreotix',
+});
+await codeStore.add({
+  label: 'Stream winners', kind: 'K', vipLevel: 0, vipDays: 0, maxUses: null, expiresAt: inAWeek, items: [{ itemId: 21, count: 1 }],
+  keys: [newKey(), newKey(), newKey()], accounts: [], admin: 'Poreotix',
+});
+
 const log = { info: (line: string) => console.log(line), warn: (line: string) => console.warn(line) };
 const config = { ...testConfig, admin: { ...testConfig.admin, origin, listen: { host: '127.0.0.1', port } } };
 const server = createAdminServer({
@@ -105,7 +123,7 @@ const server = createAdminServer({
   catalog: loadItemCatalog(assets, (line) => console.warn(line)),
   actions: ADMIN_ACTIONS,
   pages: new PageCache(now),
-  vip: { store: vipStore, files: vipFiles },
+  vip: { store: vipStore, files: vipFiles, codes: codeStore },
 });
 
 server.listen(port, '127.0.0.1', () => {
@@ -134,6 +152,12 @@ if (values['site-port'] !== undefined) {
       loginFailsByAddress: new HourlyLimit(LOGIN_FAILS_PER_HOUR, now), loginFailsByAccount: new HourlyLimit(LOGIN_FAILS_PER_HOUR, now),
       loginsByAccount: new HourlyLimit(LOGINS_PER_HOUR, now),
       requestsByAccount: new HourlyLimit(REQUESTS_PER_HOUR, now),
+      // 2026-11-20 (redeem codes): the game's Redeem Code window, on the same codes as the panel's Codes view
+      codes: codeRoutes({
+        store: codeStore, log, failsByAccount: new HourlyLimit(CODE_FAILS_PER_HOUR, now),
+        failsByAddress: new HourlyLimit(CODE_FAILS_PER_ADDRESS_HOUR, now), redeemsByAccount: new HourlyLimit(CODE_REDEEMS_PER_HOUR, now),
+        deliver: (useId) => deliverOne({ admin: codeStore, mail: codeStore }, log, useId),
+      }),
     }),
   });
   site.listen(Number(values['site-port']), '127.0.0.1', () => {
