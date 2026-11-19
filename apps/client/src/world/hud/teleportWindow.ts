@@ -80,6 +80,7 @@ export class TeleportWindow {
       const row = doc.createElement('div');
       row.setAttribute('role', 'option');
       row.dataset.place = String(index);
+      row.title = place.name; // the whole name where the list cuts it (Aminus Dungeon (Hero))
       const name = doc.createElement('span');
       name.className = 'teleport-name';
       name.textContent = place.name;
