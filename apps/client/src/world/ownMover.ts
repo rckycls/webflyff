@@ -139,11 +139,12 @@ export class OwnMover {
 /**
  * What a tap at (`ndcX`, `ndcY`) lands on, from `stage`'s camera as last drawn (`pickTap`): the mover drawn in
  * `views` that the box pick finds (the own mover, `own`, left out), which the tap selects; else the D3D point of the
- * stage's land and objects the own mover walks to; or null.
+ * stage's land and objects the own mover walks to; or null. 2026-11-20 (mouse-drag): `groundOnly` leaves the movers out
+ * (a left press with the right button held, `WndWorld.cpp:6864-6872`).
  */
 export function pickOnStage(
   stage: Pick<WorldStage, 'camera' | 'ground'> & { manifest: Pick<WorldStage['manifest'], 'mpu'> },
-  views: Pick<MoverViews, 'pickCandidates'>, own: Mover | undefined, ndcX: number, ndcY: number,
+  views: Pick<MoverViews, 'pickCandidates'>, own: Mover | undefined, ndcX: number, ndcY: number, groundOnly = false,
 ): TapHit | null {
-  return pickTap(stage.camera, ndcX, ndcY, stage.ground(), stage.manifest.mpu, views.pickCandidates(own?.objectId));
+  return pickTap(stage.camera, ndcX, ndcY, stage.ground(), stage.manifest.mpu, groundOnly ? [] : views.pickCandidates(own?.objectId));
 }

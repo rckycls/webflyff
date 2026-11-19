@@ -3802,6 +3802,8 @@ fieldset:disabled .btn {
   .world[data-cursors]:not([data-summon-armed]) .world-view canvas[data-cursor="attack"] { cursor: var(--cur-attack, pointer); }
   .world[data-cursors]:not([data-summon-armed]) .world-view canvas[data-cursor="npc"] { cursor: var(--cur-npc, pointer); }
   .world[data-cursors]:not([data-summon-armed]) .world-view canvas[data-cursor="no"] { cursor: var(--cur-no, not-allowed); }
+  /* 2026-11-20 (mouse-drag): CUR_CAMERA while the middle button is held (OnSetCursor, WndWorld.cpp:2567-2571) */
+  .world[data-cursors] .world-view canvas[data-cursor="camera"] { cursor: var(--cur-camera, move); }
   .world[data-cursors][data-loading], .world[data-cursors][data-loading] * { cursor: var(--cur-delay, wait); }
 }
 

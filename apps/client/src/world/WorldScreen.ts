@@ -258,8 +258,6 @@ import { PlacementControls } from './furniture/placementBar';
 import { RoomPapering } from './furniture/roomPapering';
 import { isPhone } from './hud/numpad';
 import type { HousingEvent } from './housing/housingBook';
-/** 2026-11-15 (housing): CM_MYROOM's lowest `m_fCurRoty`, 10 degrees (`Camera.cpp:340-349`). */
-const ROOM_MIN_PITCH = (10 * Math.PI) / 180;
 import { NearbyItems } from './items/nearbyItems';
 import {
   ENABLE_GUILD_INVENTORY, EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildBankMessage, isGuildMessage,
@@ -305,6 +303,8 @@ import { ActMsg, AniLoop, Belli, Ik3, Mti, ObjSta, ObjStaF, PARTS_RIDE, Si } fro
 
 /** Piece 7 M5: the ground's field of view (`WorldStage`'s 45 degrees, `fDiv` 4), which a landing gives back. */
 const GROUND_FOV = 45;
+/** 2026-11-20 (mouse-drag): the camera lock's keys: chUp (W), 'S', chLeft (A), 'D' (`WndWorld.cpp:8012`). */
+const CAMERA_LOCK_KEYS = ['KeyW', 'KeyS', 'KeyA', 'KeyD'] as const;
 /** 2026-11-05: the buff wings (`II_CHR_MAG_TRI_ANGELWING`, `II_SYS_SYS_EVE_WINGS`), their effect and its 1.1 s look. */
 const BUFF_WINGS: ReadonlySet<number> = new Set([10223, 6319]);
 const XI_NAT_WINGANGEL01 = 1095;
@@ -1108,8 +1108,7 @@ export class WorldScreen {
     this.element.dataset.worldId = String(worldId);
     this.worldId = worldId;
     // 2026-11-15 (housing): the room's camera (CM_MYROOM), and out of a room it is no longer the own (DPClient.cpp:2392-2401)
-    this.backCamera.minPitch = worldId === WI_WORLD_MINIROOM ? ROOM_MIN_PITCH : -Math.PI * 0.4;
-    this.backCamera.pitch = Math.max(this.backCamera.pitch, this.backCamera.minPitch);
+    this.backCamera.setRoom(worldId === WI_WORLD_MINIROOM);
     if (worldId !== WI_WORLD_MINIROOM) this.housingBook.myRoom = false;
     // OpenField and OnReplace: the music stops, and the world's rules start afresh (WndManager.cpp:2153, DPClient.cpp:2422-2427)
     this.audio?.music.stop();
@@ -2961,7 +2960,7 @@ export class WorldScreen {
     // on the canvas: the joystick is an element of its own over it, and its touches never reach it; each press goes to
     // the attack loop as it goes down (OnLButtonDown, OnLButtonDblClk): on a mover, or on the ground, which stops it
     this.tap = new TapToWalk(
-      renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
+      renderer.domElement, (x, y, groundOnly) => this.pick(x, y, groundOnly), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
       (press) => {
         // 2026-11-15 (social): any press in the world ends the follow (m_objidTracking = NULL_ID, OnLButtonDown, WndWorld.cpp:6723)
         this.tracking.stop();
@@ -3015,6 +3014,20 @@ export class WorldScreen {
     view.addEventListener('pointerup', this.onWorldButtonUp);
     view.addEventListener('pointercancel', this.onWorldButtonUp);
     this.cameraControls = new CameraControls(renderer.domElement, (dx, dy) => this.backCamera.rotate(dx, dy));
+    // 2026-11-20 (mouse-drag): the mouse's camera in V15's degrees, the wheel's zoom, the right double click's turn behind
+    // the character, and the air's Unlock; no zoom while a piece of furniture is placed (OnMouseWheel, WndWorld.cpp:7348)
+    this.cameraControls.view = {
+      turn: (yaw, up) => this.backCamera.turn(yaw, up),
+      wheel: (notches) => this.backCamera.wheel(notches),
+      page: (direction) => this.backCamera.page(direction),
+      behind: () => {
+        const own = this.world?.self();
+        if (own !== undefined) this.backCamera.behind(own.act.body.angle);
+      },
+      unlock: () => this.backCamera.unlock(),
+    };
+    this.cameraControls.flying = () => this.world?.self()?.act.isFlying() === true;
+    this.cameraControls.zoomBlocked = () => this.placement?.active === true;
     // 2026-11-15 (housing): the furniture core's placing and its input (a finger's touches are its own while it runs)
     const services = this.services!;
     const placement = new FurniturePlacement({
@@ -3893,6 +3906,11 @@ export class WorldScreen {
     this.stepsRun++;
     this.cameraControls?.step();
     const own = world.self();
+    // 2026-11-20 (mouse-drag): ZOOMLIMIT, and the camera lock (m_bCameraLock, on in V15): on the ground, with W, S, A or D
+    // held and the right button not, the camera turns behind the character (CWndWorld::Process, WndWorld.cpp:8011-8015)
+    this.backCamera.zoomLimit = this.gameOptions.zoomLimit;
+    if (this.gameOptions.cameraLock && own !== undefined && !own.act.isFlying() && this.cameraControls?.rightHeld !== true
+      && CAMERA_LOCK_KEYS.some((code) => this.keyboard?.held(code) === true)) this.backCamera.behind(own.act.body.angle);
     const shopPosition = this.shopWindow?.frame.isOpen ? own?.act.body.pos : undefined;
     const loop = this.attackLoop!;
     const held = this.tap!.heldMover();
@@ -3901,6 +3919,8 @@ export class WorldScreen {
     if (held === null) loop.onReleased();
     else loop.onMoverHeld(held.mover, now - held.time);
     const tap = this.tap!.take();
+    // 2026-11-20 (mouse-drag): both mouse buttons pressed together jump, on the ground (WndWorldControlPlayer.cpp:499-506)
+    const chordJump = this.tap!.takeChordJump();
     const walkKey = this.walkKey!.held();
     this.autoPlay?.step(); // custom (owner 2026-11-15): Auto Play, before the loop and the controls read their commands
     this.saverScreen?.step(world.nowMs()); // custom (owner 2026-11-15): the battery saver's own clock
@@ -3910,7 +3930,7 @@ export class WorldScreen {
       this.stepFlight(own, world, stage, loop, now);
       return;
     }
-    this.jumpRequested = this.keyboard!.takeJump() || this.jumpRequested;
+    this.jumpRequested = this.keyboard!.takeJump() || chordJump || this.jumpRequested;
     this.keyboard!.clearPressed(); // Piece 7 M5: X, Z and Tab pressed on the ground do nothing at a take-off
     const airborne = own !== undefined && (own.act.state & ObjSta.JUMP_ALL) !== 0;
     const jump = this.jumpRequested && own !== undefined && !own.act.isDie() &&
@@ -4003,7 +4023,9 @@ this.follow(world, stage);
       turboToggle: keys.takePressed('KeyX') || this.flightTurbo,
       trackToggle: keys.takePressed('KeyZ'),
       nextTarget: keys.takePressed('Tab'),
-      attack: keys.held('Insert') || this.flightAttack,
+      // 2026-11-20 (mouse-drag): the left button held anywhere on the world attacks the target too (ControlFlying's
+      // m_bLButtonDown, WndWorldControlPlayer.cpp:798-833), as with the cursor hidden for the steering
+      attack: keys.held('Insert') || this.flightAttack || this.worldButtonDown,
       mouse,
     };
     this.flightTurbo = false;
@@ -5109,7 +5131,9 @@ this.follow(world, stage);
       const mover = id === null ? undefined : world.movers.get(id);
       if (mover !== undefined) hover = { peaceful: mover.added.belligerence === Belli.PEACEFUL, player: mover.added.isPlayer };
     }
-    const cursor = worldCursor(hover, this.personalShop?.blocksWorld === true || this.jewels?.setting.isOpen === true);
+    // 2026-11-20 (mouse-drag): CUR_CAMERA while the middle button is held (OnSetCursor, WndWorld.cpp:2567-2571)
+    const cursor = this.cameraControls?.middleHeld === true ? 'camera'
+      : worldCursor(hover, this.personalShop?.blocksWorld === true || this.jewels?.setting.isOpen === true);
     const canvas = this.page?.renderer.domElement;
     if (canvas !== undefined && canvas.dataset.cursor !== cursor) canvas.dataset.cursor = cursor;
   }
@@ -5233,10 +5257,10 @@ this.follow(world, stage);
    * hands to the attack loop to select (`CWndWorld::SelectObj`, `WndWorld.cpp:6353-6386`) and maybe attack, the player
    * walking nowhere; or the D3D point the own mover walks to, which leaves the focus as it is (`:6361-6383`).
    */
-  private pick(ndcX: number, ndcY: number): TapHit | null {
+  private pick(ndcX: number, ndcY: number, groundOnly = false): TapHit | null {
     const { stage, views } = this;
     if (stage === undefined || views === undefined || !this.cameraPlaced) return null;
-    return pickOnStage(stage, views, this.world?.self(), ndcX, ndcY);
+    return pickOnStage(stage, views, this.world?.self(), ndcX, ndcY, groundOnly);
   }
 
   /**

@@ -10,7 +10,9 @@ const memory = (): Pick<Storage, 'getItem' | 'setItem'> & { data: Map<string, st
 
 describe('the game options (HwOption.cpp)', () => {
   it('start as CHwOption::Init sets them: trade, party and the auto-attack on; translucency and battle music off', () => {
-    expect(DEFAULT_GAME_OPTIONS).toEqual({ trade: true, party: true, autoAttack: true, translucent: false, battleMusic: false });
+    expect(DEFAULT_GAME_OPTIONS).toEqual({
+      trade: true, party: true, autoAttack: true, translucent: false, battleMusic: false, cameraLock: true, zoomLimit: true,
+    });
     expect(loadGameOptions(null)).toEqual(DEFAULT_GAME_OPTIONS);
   });
 

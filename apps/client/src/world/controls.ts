@@ -204,6 +204,10 @@ const TAP_HOLD_MS = 300;
  */
 const DOUBLE_MS = 500;
 const DOUBLE_PX = 2;
+/** 2026-11-20: both buttons pressed within this many ms of each other jump (`WndWorldControlPlayer.cpp:499-506`). */
+const CHORD_JUMP_MS = 500;
+/** 2026-11-20: a left press this soon after a right one is the jump's, no press (`WndWorld.cpp:6810-6813`). */
+const RIGHT_FIRST_MS = 200;
 
 /**
  * A press on the world, handed on as it goes down (`CWndWorld::OnLButtonDown`, `WndWorld.cpp:6712-7113`, or for a double
@@ -242,9 +246,15 @@ type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
  *   then (`WndWorld.cpp:6471-6503`), not at the next rules step: a mouse press's when it is let go, cancelled or its
  *   pointer lost, a finger's tap's right after its press.
  * - A press on the ground is a tap where the player walks (`m_bFreeMove`, :6989-6997, and `ControlGround`'s destination
- *   at the point, `WndWorldControlPlayer.cpp:299-361`): `take`. Neuz sets the destination as the button goes down, and
- *   drags with it held turn the camera; here a press is a tap only if it is let go within 300 ms and 8 px of where it
- *   went down, so that a drag or a held finger walks nowhere. The point is the one it went down at.
+ *   at the point, `WndWorldControlPlayer.cpp:299-361`): `take`. 2026-11-20 (mouse-drag): a mouse's sets it as the button
+ *   goes down, as Neuz does, however long it is held and wherever it is dragged after (V15's left drag does nothing
+ *   more: `m_bFreeMove` is spent at once, `__J0823` off). A finger's is a tap only if it is let go within 300 ms and 8 px
+ *   of where it went down, so that a camera drag or a held finger walks nowhere. The point is the one it went down at.
+ * - 2026-11-20 (mouse-drag): the two buttons. Left and right both held, the second pressed within 500 ms of the first:
+ *   a jump (`ControlGround`, `WndWorldControlPlayer.cpp:499-506`), `takeChordJump`. A left press while the right is held
+ *   is on the ground even over a mover (`m_bRButtonDown`: no select, `WndWorld.cpp:6864-6872`), and within 200 ms of
+ *   the right's press it is no press at all (the jump's, :6810-6813). Pointer Events give a second button's press and
+ *   let-go as moves with their `button`.
  *
  * Only the main button and a lone finger press: a second finger ends the first one's press. An error `pick` throws goes
  * to `report` (the overlay), and the press gives nothing; without `report` it is thrown.
@@ -256,10 +266,15 @@ export class TapToWalk {
   /** The last press that went down, for the next one's double click; null after a double click's second press. */
   private last: { x: number; y: number; time: number } | null = null;
   private dest: Vec3 | null = null;
+  /** 2026-11-20: the mouse's left and right buttons held on the world, and when each went down (`m_timerLButtonDown`, `m_timerRButtonDown`). */
+  private leftDown: number | null = null;
+  private rightDown: number | null = null;
+  private chordJump = false;
 
   constructor(
     private readonly canvas: HTMLElement,
-    private readonly pick: (ndcX: number, ndcY: number) => TapHit | null,
+    /** `groundOnly`: the ground under the point, the movers left out (2026-11-20: a left press with the right held). */
+    private readonly pick: (ndcX: number, ndcY: number, groundOnly?: boolean) => TapHit | null,
     private readonly report?: (error: unknown) => void,
     private readonly onPress?: (press: WorldPress) => unknown, // true: the press is taken (2026-11-05)
     /** Piece 7 M4: a right press let go where it went down, on a mover (`OnRButtonUp`, `WndWorld.cpp:7114-7131`). */
@@ -286,11 +301,41 @@ export class TapToWalk {
     return press !== null && !press.deferred && press.hit !== null && 'mover' in press.hit ? { mover: press.hit.mover, time: press.time } : null;
   }
 
+  /** 2026-11-20: whether both mouse buttons went down within 500 ms of each other since the last call (a jump). */
+  takeChordJump(): boolean {
+    const jump = this.chordJump;
+    this.chordJump = false;
+    return jump;
+  }
+
   /** Forgets a press under way and a tap not yet taken: the page lost the focus or was hidden. */
   reset(): void {
     this.press = null;
     this.last = null;
     this.dest = null;
+    this.leftDown = this.rightDown = null;
+    this.chordJump = false;
+  }
+
+  /** 2026-11-20: a mouse button went down at `time`: with the other held and pressed within 500 ms, the two buttons' jump. */
+  private buttonDown(button: number, time: number): void {
+    if (button === 0) this.leftDown = time;
+    else if (button === RIGHT_BUTTON) this.rightDown = time;
+    else return;
+    if (this.leftDown !== null && this.rightDown !== null && Math.abs(this.leftDown - this.rightDown) < CHORD_JUMP_MS) {
+      this.chordJump = true;
+    }
+  }
+
+  private buttonUp(button: number): void {
+    if (button === 0) this.leftDown = null;
+    else if (button === RIGHT_BUTTON) this.rightDown = null;
+  }
+
+  /** The canvas has the pointer locked (the air's steering): the cursor is not where a click would be. */
+  private locked(): boolean {
+    const doc = this.canvas.ownerDocument as Document | null | undefined;
+    return doc !== null && doc !== undefined && 'pointerLockElement' in doc && doc.pointerLockElement === this.canvas;
   }
 
   dispose(): void {
@@ -304,11 +349,23 @@ export class TapToWalk {
 
   private readonly onDown = (event: PointerEvent): void => {
     this.press = null;
+    if (event.pointerType !== 'touch') this.buttonDown(event.button, event.timeStamp);
     if (event.button === RIGHT_BUTTON && event.isPrimary) {
+      this.lastRightPress = event.timeStamp;
       this.menuPress = { x: event.clientX, y: event.clientY };
       return;
     }
     if ((!event.isPrimary && event.pointerType !== 'touch') || event.button !== 0) return;
+    this.pressAt(event, false);
+  };
+
+  /** 2026-11-20: when the right button last went down (`m_timerRButtonDown`), held or not. */
+  private lastRightPress: number | null = null;
+
+  /** A press of the main button or a finger at `event`; `groundOnly`: the right button is held (no mover is pressed). */
+  private pressAt(event: PointerEvent, groundOnly: boolean): void {
+    // 2026-11-20: within 200 ms of a right press it is the two buttons' jump, no press (OnLButtonDown, WndWorld.cpp:6810-6813)
+    if (event.pointerType !== 'touch' && this.lastRightPress !== null && event.timeStamp - this.lastRightPress < RIGHT_FIRST_MS) return;
     const box = this.canvas.getBoundingClientRect();
     if (!(box.width > 0 && box.height > 0)) return;
     const { pointerId, clientX: x, clientY: y, timeStamp: time } = event;
@@ -318,7 +375,7 @@ export class TapToWalk {
     this.last = double ? null : { x, y, time };
     let hit: TapHit | null;
     try {
-      hit = this.pick(((x - box.left) / box.width) * 2 - 1, 1 - ((y - box.top) / box.height) * 2);
+      hit = this.pick(((x - box.left) / box.width) * 2 - 1, 1 - ((y - box.top) / box.height) * 2, groundOnly);
     } catch (error) {
       if (this.report === undefined) throw error;
       this.report(error);
@@ -332,7 +389,20 @@ export class TapToWalk {
     // 2026-11-05: a press `onPress` takes for itself (true: the monster summon's place) walks nowhere
     const point = hit !== null && 'point' in hit ? { point: hit.point } : {};
     if (!deferred && this.onPress?.({ mover, time, double, alt, touch: false, ...point }) === true) this.press.tap = false;
-  };
+    else if (!deferred && hit !== null && 'point' in hit) {
+      // 2026-11-20: a mouse's press on the ground walks as it goes down (m_bFreeMove, WndWorldControlPlayer.cpp:300-338)
+      this.dest = hit.point;
+      this.press.tap = false;
+    }
+  }
+
+  /** 2026-11-20: the left button let go while the right stays held (a chord's let-go, which comes as a move). */
+  private leftLetGo(event: PointerEvent): void {
+    const press = this.press;
+    if (press === null || press.deferred || event.pointerId !== press.pointerId) return;
+    this.press = null;
+    this.letGo(press, event);
+  }
 
   /** The mover under a press, or null (the ground, nothing, or a pick that threw, which is reported). */
   private moverAt(event: PointerEvent): number | null {
@@ -349,16 +419,34 @@ export class TapToWalk {
   }
 
   private readonly onMove = (event: PointerEvent): void => {
+    // 2026-11-20: a second mouse button pressed or let go while the other is held (Pointer Events' chords)
+    if (event.pointerType !== 'touch' && typeof event.buttons === 'number' && (event.button === 0 || event.button === RIGHT_BUTTON)) {
+      const held = (event.buttons & (event.button === 0 ? 1 : 2)) !== 0;
+      if (held) {
+        this.buttonDown(event.button, event.timeStamp);
+        if (event.button === RIGHT_BUTTON) this.lastRightPress = event.timeStamp;
+        else this.pressAt(event, this.rightDown !== null);
+      } else {
+        this.buttonUp(event.button);
+        if (event.button === 0) this.leftLetGo(event);
+      }
+      return;
+    }
     const press = this.press;
     if (press !== null && event.pointerId === press.pointerId && moved(press, event)) press.tap = false;
   };
 
   private readonly onUp = (event: PointerEvent): void => {
+    if (event.pointerType !== 'touch') {
+      this.buttonUp(event.button);
+      if ((event.buttons ?? 0) === 0) this.leftDown = this.rightDown = null;
+    }
     if (event.button === RIGHT_BUTTON) {
       const menu = this.menuPress;
       this.menuPress = null;
-      // the highlighted object as it is let go, only where it went down: a drag that turned the camera picks nothing
-      if (menu === null || menu.x !== event.clientX || menu.y !== event.clientY) return;
+      // the highlighted object as it is let go, only where it went down: a drag that turned the camera picks nothing;
+      // 2026-11-20: nor while the air's steering has the cursor locked
+      if (menu === null || menu.x !== event.clientX || menu.y !== event.clientY || this.locked()) return;
       const mover = this.moverAt(event);
       if (mover !== null) this.onMenuPress?.(mover);
       return;
@@ -378,6 +466,7 @@ export class TapToWalk {
   };
 
   private readonly onCancel = (event: PointerEvent): void => {
+    if (event.type === 'pointercancel' && event.pointerType !== 'touch') this.leftDown = this.rightDown = null;
     const press = this.press;
     if (press === null || event.pointerId !== press.pointerId) return;
     this.press = null;
