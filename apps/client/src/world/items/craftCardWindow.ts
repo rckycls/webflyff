@@ -345,8 +345,14 @@ export class CraftCardWindow extends NpcWindow {
     return true;
   }
 
+  /**
+   * The most tries: the letter's, cut to what the stacks pay for. A stack's pieces are those not held elsewhere (another
+   * window's) plus this window's own slots of it (final review: the whole stack counted pieces other windows hold).
+   */
   private bulkMax(): number {
-    const countOf = (objectId: number): number => this.host.own()?.inventory?.get(objectId)?.count ?? 0;
+    const own = (objectId: number): number =>
+      (this.stone === objectId ? 1 : 0) + this.cards.filter((id) => id === objectId).length;
+    const countOf = (objectId: number): number => freeOf(this.host, objectId) + own(objectId);
     return Math.min(maxTries(this.host.authorization()), affordableTries(this.stone, this.cards, countOf));
   }
 

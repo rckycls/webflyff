@@ -157,6 +157,19 @@ describe('Craft Card window', () => {
     expect(r.sent).toEqual([{ type: 'craftCard', npcId: BOZMAN, stoneId: 1, cardIds: [7, 7], tries: 4, stopOnSuccess: false }]);
   });
 
+  it('the bulk most leaves out the pieces another window holds (final review)', () => {
+    const r = rig({ authorization: 'B' });
+    for (let i = 0; i < 4; i++) r.host.reserve(7, true); // another window holds 4 of the 10 Magma
+    r.window.openAt(BOZMAN);
+    r.window.take(1, false);
+    r.window.take(7, false);
+    r.window.take(7, false);
+    r.choose(2);
+    bulkButton(r).click();
+    // 10 - 4 = 6 Magma for two slots: 3 tries, not 5
+    expect(r.triesAsked).toEqual([3]);
+  });
+
   it('the stop tick box goes with the bulk press', () => {
     const r = rig({ authorization: 'E' });
     r.window.openAt(BOZMAN);
