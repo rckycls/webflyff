@@ -45,3 +45,39 @@ Quick checks run here:
 
 Not testable headless: pointer lock (flight steering); try it by hand: fly, hold right and move the mouse past the
 screen edge; right double click in the air, move without a button, Esc to stop.
+
+After merging `mouse-drag-ui` (f163829): `npm run typecheck` clean; 13 related vitest files, 184 tests, pass;
+`E2E_CLIENT_PORT=5193 npx playwright test -c apps/client/playwright.config.ts --project=chromium --project=phone apps/client/e2e/mouseDrag.spec.ts apps/client/e2e/mouseDragUi.spec.ts apps/client/e2e/items.spec.ts apps/client/e2e/controls.spec.ts apps/client/e2e/controlsCursors.spec.ts`: 19 passed, 11 skipped (other device), 0 failed.
+
+## Full suites (for the owner, in this worktree)
+
+    cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\mouse-drag
+    npm run typecheck
+    npm test
+    $env:E2E_CLIENT_PORT='5190'; npx playwright test -c apps/client/playwright.config.ts --project=chromium --project=phone
+
+Pass: typecheck exits 0; `npm test` has no failures beyond any main already has; Playwright has no failures in
+`mouseDrag`, `mouseDragUi`, `controls`, `controlsCursors`, `items`, `flight`, `mobileUx`, `friends`, `windows`, `housing`.
+
+## By hand (computer)
+
+- Wheel in and out; PageUp / PageDown.
+- Right drag: slow and fast; right double click on the ground.
+- Walk with W/A/D: the camera swings behind.
+- Click the ground and hold: walks at once.
+- Press left and right together: jump.
+- Fly:
+  - right drag past the screen edge (the cursor hides);
+  - right double click, then steer without a button (Esc ends it);
+  - middle drag: the camera turns; let go: it goes back behind.
+
+## VPS (after the merge; no convert, no server change)
+
+1. Merge into FlyffWeb main (the owner's word): `git merge --no-ff mouse-drag`.
+2. Make the package, in the server repo: `powershell -ExecutionPolicy Bypass -File deploy\0-Make-Package.ps1 -FlyffWebOnly -NoAssets`.
+   This is code only; the VPS keeps its game files.
+3. On the VPS, follow the package's `PACKAGE.txt`:
+   - unpack it to `C:\FlyFF-update`;
+   - `robocopy C:\FlyFF-update\deploy C:\FlyFF\deploy /E`;
+   - `C:\FlyFF\deploy\run.bat Update-FlyffWeb -From C:\FlyFF-update\FlyffWeb`;
+   - delete `C:\FlyFF-update`.
