@@ -77,6 +77,22 @@ export class MemoryVipStore implements VipSiteStore, VipAdminStore {
     return this.players.find((p) => p.account.toLowerCase() === account.toLowerCase());
   }
 
+  // 2026-11-20 (redeem codes): what the code store (memoryCodeStore.ts) needs of the VIP rows
+  /** The account as stored, or `undefined` when there is no such account. */
+  accountOf(account: string): string | undefined {
+    return this.find(account)?.account;
+  }
+
+  liveVipOf(account: string): { level: number; endsAt: number } | undefined {
+    return this.liveVip(account);
+  }
+
+  /** Sets an account's VIP row and its letter (as Give VIP does). */
+  setVip(account: string, level: number, endsAt: number): void {
+    this.vips.set(account.toLowerCase(), { level, endsAt });
+    this.giveLetter(account, level);
+  }
+
   private liveVip(account: string): { level: number; endsAt: number } | undefined {
     const vip = this.vips.get(account.toLowerCase());
     return vip !== undefined && vip.endsAt > this.now() ? vip : undefined;
