@@ -26,6 +26,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashPassword, normalizeAccount } from '@flyffweb/protocol';
 import type { SessionBook } from '../admin/sessions';
+import type { CodeRoutes } from '../codes/siteCodes';
 import type { WebConfig } from '../config';
 import type { HourlyLimit } from '../hourlyLimit';
 import type { Logger } from '../log';
@@ -58,6 +59,8 @@ export interface SiteVipDeps {
   log: Logger;
   /** custom (owner 2026-11-17): Auto Play's weekly hours; absent: the routes answer off. */
   autoPlay?: AutoPlayUsage;
+  /** 2026-11-20 (redeem codes): `/api/codes/*` on the session (codes/siteCodes.ts); absent: they answer 503 off. */
+  codes?: CodeRoutes;
 }
 
 /** An account's VIP level is read again after this long (ms): a tick a minute does not ask the database each time. */
@@ -67,7 +70,7 @@ const TICK_BODY_LIMIT = 256;
 
 const JSON_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 
-function send(res: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}, close = false): void {
+export function send(res: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}, close = false): void {
   const text = JSON.stringify(body);
   res.writeHead(status, {
     ...JSON_HEADERS,
@@ -80,7 +83,7 @@ function send(res: ServerResponse, status: number, body: unknown, extra: Record<
 }
 
 /** Answers before the body was read: the connection closes after it, so the rest of the body is never taken. */
-function refuseUnread(req: IncomingMessage, res: ServerResponse, status: number, body: unknown): void {
+export function refuseUnread(req: IncomingMessage, res: ServerResponse, status: number, body: unknown): void {
   send(res, status, body, {}, true);
   res.once('finish', () => req.socket.destroy());
 }
@@ -112,7 +115,7 @@ function sameText(a: string, b: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-function parseObject(raw: Buffer): Record<string, unknown> | undefined {
+export function parseObject(raw: Buffer): Record<string, unknown> | undefined {
   try {
     const parsed: unknown = JSON.parse(raw.toString('utf8'));
     return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
@@ -122,7 +125,7 @@ function parseObject(raw: Buffer): Record<string, unknown> | undefined {
 }
 
 /** One word of printable ASCII for a log line. */
-const logWord = (text: string): string => text.replace(/[^\x21-\x7e]/g, '?').slice(0, 32) || '-';
+export const logWord = (text: string): string => text.replace(/[^\x21-\x7e]/g, '?').slice(0, 32) || '-';
 
 /**
  * A reference number as the receipt shows it: 4 to 40 letters, digits, spaces and dashes, starting with a letter or a
@@ -334,6 +337,16 @@ export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: Se
     if (path === '/api/vip/requests') {
       await sendRequest(req, res, address);
       return true;
+    }
+    if (path.startsWith('/api/codes/')) {
+      // 2026-11-20 (redeem codes): off without the codes; else on the session, checked from the headers first
+      if (deps.codes === undefined) {
+        refuseUnread(req, res, 503, { error: 'off' });
+        return true;
+      }
+      const session = postSession(req, res);
+      if (session === undefined) return true;
+      return deps.codes(req, res, path, address, session.user);
     }
     if (path === '/api/autoplay/tick') {
       const session = postSession(req, res);
