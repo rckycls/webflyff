@@ -9,6 +9,9 @@ Owner's request: "redeemable codes for free VIP Tiers i can send with expiration
   mobile browsers. If its an item it checks if you have slot before redeem. If its a VIP it tells you to relogin to see
   changes. We have to make sure the error handling is taken care really carefully here."
 - Picked **mail, then into the bag** for how items arrive.
+- "I'm thinking of different gift boxes that is not associated with VIPs. Like i can make a code and associate an item
+  to it which will be received by the redeemer. It can be a giftbox or a single item." Then: boxes **already in the
+  game** (no new box items).
 
 ## Why
 
@@ -18,8 +21,9 @@ events, rewards.)
 
 ## Goals
 
-- The owner makes codes in the admin panel. A code gives any mix of: a VIP tier for some days, up to 6 item stacks,
-  and the VIP tier's gift box.
+- The owner makes codes in the admin panel. A code gives a VIP tier for some days, up to 6 item stacks, or both.
+  An item is anything in the game's item list: a single item, or one of the game's own box items the player opens in
+  the bag.
 - Every code has an end date and time; after it, the code stops working.
 - Three kinds of code:
   - **Everyone:** one code; each account can use it once; an optional cap on total uses ("first 100").
@@ -35,7 +39,8 @@ events, rewards.)
 - No code box on the website's VIP page (owner: in-game window).
 - No change to the game server (World, Database exes). Everything is FlyffWeb and its SQL.
 - No penya codes, no start date (a code works from when it is made), no editing what a code gives after it is made.
-- No recurring monthly gift for code VIP: the gift box comes only if the code has the gift tick, once.
+- No VIP gift box from codes (the panel's per-tier boxes stay for paid VIP and Give VIP only): a code's boxes are the
+  game's own box items, added as items. No new box items (that would be a data job of its own).
 
 ## Anti-goals (a failure even if it works)
 
@@ -95,7 +100,7 @@ The owner picked 1: it is the only one with both "nothing can be lost" and "item
 2. The player types or pastes the code. Spaces and dashes are ignored; letters are not case-sensitive. The game's
    floating keyboard works in the box; a **Paste** button reads the clipboard (phones: copy from Discord, paste here).
 3. **Check** asks the website what the code gives, and shows it with item icons and names. It also shows the bag
-   slots needed: one empty main-bag slot per item stack (the gift box's stacks included), against the empty slots the
+   slots needed: one empty main-bag slot per item stack, against the empty slots the
    player has now.
 4. **Redeem** is enabled only when the bag has room. When the code's VIP is higher than the player's live VIP, the
    window warns first: "This ends your VIP1 (20 days left) and gives VIP4 for 7 days." and Redeem asks again before
@@ -129,8 +134,7 @@ The owner picked 1: it is the only one with both "nothing can be lost" and "item
   - a higher tier: only with the player's confirm (above); the old tier ends now. The use log keeps the old tier and
     its end.
   - The account's letter is set as Give VIP sets it (staff keep theirs).
-- The items (and the gift box's stacks, read from `WEB_VIP_GIFT_ITEM` at that moment) are written into the use, then
-  sent as mail to the redeeming character (checked to be the account's, server 01, not deleted).
+- The items are written into the use, then sent as mail to the redeeming character (checked to be the account's, server 01, not deleted).
 
 ### What can go wrong, and what the player sees
 
@@ -172,8 +176,7 @@ Tries: 10 wrong codes an hour per account and 30 per address (in memory, like th
 
 ### The panel (VIP tab, new view "Codes")
 
-- **Make a code:** label; VIP (none, 1-4) and days (1-366) and a gift box tick (only with a VIP tier: the box is that
-  tier's); up to 6 item stacks with the Send tab's item search and the gift box editor's stack-size checks (a mail with
+- **Make a code:** label; VIP (none, 1-4) and days (1-366); up to 6 item stacks (at least a VIP or an item) with the Send tab's item search and the gift box editor's stack-size checks (a mail with
   an item the server does not know, or a count over its stack size, is never delivered); kind (Everyone with optional cap / Only these accounts with a
   list, each checked to exist / One-use codes with how many, 1-500); code: random (default) or the owner's own word
   (Everyone and Only-these only); end date and time (required, at most a year ahead; typed and shown in the
