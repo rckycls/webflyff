@@ -77,8 +77,10 @@ Title "Teleport", V15 tiled frame (`ResWindow`), about 440 x 330 on desktop.
 
 ## Behaviour
 
-- Start menu: a new folder **"Extras"** (V15 folder look) holding Auto Play, Pet Filter and Teleport, so the top level
-  keeps room (Awaken joins the folder when it merges). The phone's Auto Play and Pet Filter icons stay. No hotkey.
+- Start menu: a new folder **"Extras"** (V15 folder look) holding Pet Filter and Teleport, so the top level keeps its 18
+  lines (Awaken can join the folder when it merges). Built call: Auto Play stays at the top level (the most used, and
+  moving it would have resized the whole menu). The phone's Auto Play and Pet Filter icons stay; U still opens the Pet
+  Filter. No hotkey for Teleport.
 - The window opens on the last place picked this session (Flaris the first time).
 - Apply: the client refuses at once a VIP place for a non-VIP ("Only VIP players can teleport there.") and too little
   penya (V15's "not enough Penya"); otherwise it sends the number and closes the window. Every other refusal comes
@@ -96,7 +98,8 @@ awaken, VIP-perks and craft-card patches touch), checks in this order and change
 3. the 10-second wait (`CUser` in-memory tick, 0 at login) → "You can teleport again in N seconds.";
 4. `GetSummonState()`: trade/bank, dead, shop, fighting, flying, duel → V15's own messages (`TID_GAME_STATE_NOTUSE`
    with the state's text, as the party summon does);
-5. chaotic or PK-pink → "You cannot teleport now.";
+5. chaotic or PK-pink, sitting, casting an item, frozen by a GM, turned to stone, or due a rename (the Blinkwing's own
+   refusals) → "You cannot teleport now.";
 6. the Blinkwing's places: guild siege world, 1v1 guild war, secret room, rainbow race, quiz, housing (mini room),
    Azria (Kebaras), and the arena → "You cannot teleport from here.";
 7. under 10,000 penya → `TID_GAME_LACKMONEY`;

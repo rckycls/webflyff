@@ -3384,7 +3384,7 @@ fieldset:disabled .btn {
   .hud-teleport:not([hidden]) {
     left: calc(50% - min(300px, 50% - 8px)) !important; top: 8px !important; transform: none !important;
     width: min(600px, calc(100% - 16px)) !important; height: auto !important; display: flex !important; flex-direction: column;
-    overflow: hidden;
+    max-height: calc(100% - var(--hud-taskbar-height, 48px) - 16px); overflow: hidden;
   }
   /* the compact panels' frame (WndTile00-11 stretched to the panel), caption, close and pale backing, as theirs */
   .hud-teleport { background: none !important; box-shadow: none !important; border-radius: 0 !important; }
@@ -3410,7 +3410,8 @@ fieldset:disabled .btn {
   .hud-teleport .hud-edit-tiles > div { position: static !important; width: auto !important; height: auto !important; }
   .hud-teleport > .hud-window-body {
     position: relative !important; left: auto !important; top: auto !important; width: auto !important;
-    height: min(290px, calc(100vh - var(--hud-taskbar-height, 48px) - 60px)) !important;
+    /* 290 px, less where the room above the task bar (the panel's max-height, the layer's visible height) is shorter */
+    height: 290px !important; flex: 0 1 auto; min-height: 0;
     box-sizing: border-box; margin: 22px 8px 10px 4px; padding: 4px 6px 6px; font: 12px/15px Verdana, Tahoma, sans-serif;
     display: grid; grid-template-columns: minmax(130px, 34%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto;
     gap: 6px 10px;
