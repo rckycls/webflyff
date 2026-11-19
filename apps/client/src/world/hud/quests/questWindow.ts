@@ -171,6 +171,8 @@ export class QuestWindow {
     };
     this.list = new WindowFrame('Quest', art, { width: LIST.width, height: LIST.height }, doc);
     this.list.element.classList.add('hud-quests');
+    // 2026-11-20 (mouse-drag-ui): its place kept for the next time (regInfo.dat, frame.ts `rememberAs`)
+    this.list.rememberAs = 'APP_QUEST_EX_LIST';
     // 2026-11-16 (owner): above the phone's open bag (`overBag`)
     this.list.overBag = true;
     this.list.onClose = () => {

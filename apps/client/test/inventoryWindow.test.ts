@@ -127,7 +127,10 @@ describe('inventory window', () => {
     tap('[data-bag-slot="6"]');
     tap('[data-item-action="drop"]');
     expect(details()).toBeNull();
-    expect(ui.frame.element.querySelector('.inventory-drop-dialog')).not.toBeNull();
+    // 2026-11-20 (mouse-drag-ui): Neuz's count box (APP_DROP_ITEM), in the windows' layer, filled with the whole stack
+    const box = document.querySelector<HTMLElement>('.hud-drop-item');
+    expect(box?.hidden).toBe(false);
+    expect(box!.querySelector('input')!.value).toBe('2');
     // a tap on the item again opens the tooltip again
     tap('[data-bag-slot="6"]');
     expect(details()).not.toBeNull();
@@ -283,14 +286,17 @@ describe('inventory window', () => {
     cell.dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true }));
     canvas.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
     expect(drop).not.toHaveBeenCalled();
-    const dialog = ui.frame.element.querySelector('[role="dialog"]')!;
-    dialog.querySelector('input')!.value = '2';
-    dialog.querySelector<HTMLButtonElement>('button')!.click();
+    // 2026-11-20 (mouse-drag-ui): Neuz's count box (APP_DROP_ITEM) in the windows' layer, filled with the whole stack
+    const dialog = document.querySelector<HTMLElement>('.hud-drop-item')!;
+    expect(dialog.hidden).toBe(false);
+    expect(dialog.querySelector('input')!.value).toBe('2');
+    dialog.querySelector<HTMLButtonElement>('[data-control="WIDC_OK"]')!.click();
     expect(drop).toHaveBeenCalledWith(6, 2); expect(own.inventory!.get(6)?.count).toBe(2);
+    expect(dialog.hidden).toBe(true);
     cell.dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true }));
     own.inventory!.set(6, { objectId: 6, itemId: 502, count: 1 }); // server reuses the object while the drag is pending
     canvas.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
-    expect(ui.frame.element.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('.hud-drop-window:not([hidden])')).toBeNull();
     ui.dispose(); world.remove();
   });
 });

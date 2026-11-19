@@ -217,6 +217,8 @@ export class GuildWindow {
   ) {
     const frame = new WindowFrame('Guild Window', art, { width: WIDTH, height: HEIGHT, mobileScale: 1, fitWhole: true }, doc);
     frame.element.classList.add('hud-guild');
+    // 2026-11-20 (mouse-drag-ui): its place kept for the next time (regInfo.dat, frame.ts `rememberAs`)
+    frame.rememberAs = 'APP_GUILD';
     this.frame = frame;
 
     this.info = this.page(INFO, 'info');

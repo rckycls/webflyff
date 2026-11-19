@@ -96,7 +96,7 @@ import { TargetBuffs } from './hud/targetBuffs';
 import { CameraControls } from './cameraControls';
 import { blockBrowserGestures } from './browserGestures';
 import { CharacterWindow } from './hud/characterWindow';
-import { escapeWindow, refitWindows } from './hud/frame';
+import { escapeWindow, refitWindows, rememberWindows } from './hud/frame';
 import { cursorProperties, worldCursor } from './hud/cursors';
 import type { WorldHover } from './hud/cursors';
 import { themeUrl } from './hud/art';
@@ -162,7 +162,7 @@ import type { QuestCatalog, QuestNames, QuestOwner } from './quests/questRules';
 import type { QuestChange } from './OwnState';
 import { expNeeded, expPercent } from './sim/params';
 import { dialogueStays, ownStands } from './hud/dialogue/dialogueStays';
-import { ShopWindow } from './hud/shopWindow';
+import { SHOP_DRAG, ShopWindow } from './hud/shopWindow';
 import { wordChange } from './hud/chatSend';
 import { PersonalShop, cameraDistance } from './vendor/personalShop';
 import {
@@ -1703,6 +1703,8 @@ export class WorldScreen {
     const { holder, renderer } = this.page!;
     const doc = this.element.ownerDocument;
     const view = doc.defaultView ?? window;
+    // 2026-11-20 (mouse-drag-ui): the windows keep their places for the next time (regInfo.dat; frame.ts, desktop only)
+    rememberWindows(doc, (() => { try { return view.localStorage; } catch { return null; } })());
     this.hudArt!.sheets = sheets;
     this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.hud!.element);
     // Piece 7 M2: the charge gauge, over the canvas and under the windows (CMover::RenderGauge draws it with the world)
@@ -2245,6 +2247,12 @@ export class WorldScreen {
         this.sounds?.drop();
         if (itemActions.drop(id, count)) this.lastDropAt = performance.now();
       },
+      // 2026-11-20 (mouse-drag-ui): asked before the V15 drop boxes open (CWndWorld::OnDropIcon, WndWorld.cpp:7776-7808)
+      dropLimit: () => (this.shopWindow?.frame.isOpen === true || this.bankHud?.isOpen === true || this.guildBankHud?.busy === true
+        || this.summonAngel?.isOpen === true || this.tradeHud?.windowOpen === true || this.beautyShop?.face.isOpen === true
+        || this.beautyShop?.hair.isOpen === true ? 'TID_GAME_TRADELIMITITEM'
+        : this.itemNpc?.repair.isOpen === true ? 'TID_GAME_REPAIR_NOTDROP' : null),
+      say: (tid) => this.say(tid),
       // 2026-11-10: no move inside the bag while trading (CWndInventory::OnDropIcon, WndField.cpp:2862-2876)
       move: (source, dest) => { if (!this.tradeLimit()) itemActions.move(source, dest); },
       shortcut: (id, slot) => taskBar.setInventoryShortcut(id, slot),
@@ -2389,6 +2397,9 @@ export class WorldScreen {
       buyChip: (tab, id, count, itemId) => { this.sounds?.shop(); session.sendBuyChipItem(tab, id, count, itemId); },
       sell: (id, count) => { this.sounds?.shop(); session.sendSellItem(id, count); },
       alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      // 2026-11-20 (mouse-drag-ui): the drags' boxes: a line, and the bag items a window holds
+      say: (tid) => this.say(tid),
+      held: (id) => this.bagHeld(id) || (this.tradeHud?.extraOf(id) ?? 0) > 0,
     }, doc);
     this.shopWindow.onOpen = () => {
       this.hud!.element.classList.add('shop-active');
@@ -2808,9 +2819,12 @@ export class WorldScreen {
         ...(guildBankHud.isOpen ? [GUILD_BANK_DRAG, GUILD_BANK_PENYA_DRAG] : []),
         // 2026-11-17: a Backpack item (WndField.cpp:1918-1977)
         ...(pocketHud.isOpen ? [POCKET_DRAG] : []),
+        // 2026-11-20 (mouse-drag-ui): an NPC shop's item, bought (WndField.cpp:1757-1807)
+        ...(this.shopWindow?.frame.isOpen === true ? [SHOP_DRAG] : []),
       ],
       drop: (type, data) => {
-        if (type === GUILD_BANK_DRAG) guildBankHud.dropOnBag(Number(data));
+        if (type === SHOP_DRAG) this.shopWindow?.dropOnBag(Number(data));
+        else if (type === GUILD_BANK_DRAG) guildBankHud.dropOnBag(Number(data));
         else if (type === GUILD_BANK_PENYA_DRAG) guildBankHud.dropOnBag(undefined);
         else if (type === MAIL_DRAG) postHud.dropOnBag('item');
         else if (type === POCKET_DRAG) {

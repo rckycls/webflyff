@@ -271,6 +271,8 @@ export class OptionWindow {
       ? { width: tabs.left * 2 + tabs.width + 12, height: tabs.top * 2 + tabs.height + 32, mobileScale: 1, fitWhole: true }
       : { width: WIDTH, height: HEIGHT }, doc);
     this.frame.element.classList.add('hud-option');
+    // 2026-11-20 (mouse-drag-ui): its place kept for the next time (regInfo.dat, frame.ts `rememberAs`)
+    this.frame.rememberAs = 'APP_OPTIONEX';
     this.frame.element.toggleAttribute('data-phone', this.mobile);
     // 2026-11-16 (owner): above the phone's open bag, as the other windows a Start menu line opens
     this.frame.overBag = true;

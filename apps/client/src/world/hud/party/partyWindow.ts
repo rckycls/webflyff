@@ -116,6 +116,8 @@ export class PartyWindow {
       ? { width: WIDTH, height: HEIGHT, mobileScale: 1, fitWhole: true }
       : { width: WIDTH, height: HEIGHT }, doc);
     frame.element.classList.add('hud-party');
+    // 2026-11-20 (mouse-drag-ui): its place kept for the next time (regInfo.dat, frame.ts `rememberAs`)
+    frame.rememberAs = 'APP_PARTY';
     const body = frame.body;
     for (const [title, rect] of GROUPS) body.append(this.label('hud-party-group', title, rect));
     for (const [title, rect] of LABELS) body.append(this.label('hud-party-label', title, rect));
