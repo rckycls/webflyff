@@ -20,6 +20,11 @@
 --   usp_AdminVip* / usp_AdminPayQr* procedures for the panel's login flyffweb_admin. Each login gets EXECUTE on its own
 --   procedures only (when that login's user exists in ACCOUNT_DBF), and no table rights: the procedures belong to dbo
 --   and reach their tables through ownership chaining.
+-- 2026-11-20 (redeem codes, docs/superpowers/specs/2026-11-20-vip-codes-design.md): dbo.WEB_CODE (the codes the owner
+--   makes: a VIP level for some days, up to 6 item stacks, or both; for everyone, only some accounts, or a batch of
+--   one-use keys), WEB_CODE_ITEM, WEB_CODE_KEY, WEB_CODE_ACCOUNT and WEB_CODE_USE (each redeem, with the character its
+--   items go to by in-game mail), and in CHARACTER_01_DBF, WEB_CODE_SENT (each use whose mails were written); the
+--   site's usp_WebCodeCheck / usp_WebCodeRedeem / usp_WebCodeCharacter and the panel's usp_AdminCode* procedures.
 --
 -- Every procedure takes typed parameters and builds no SQL from text. Times are UTC, sent as text ending in Z.
 -- The pictures themselves are files outside the web folders (web.config.json's vip.uploadsDir); the tables hold only
@@ -157,6 +162,88 @@ IF NOT EXISTS (SELECT 1 FROM dbo.WEB_VIP_GIFT_ITEM)
 		(3, 1, 10206, 30), (3, 2, 10207, 30), (3, 3, 10208, 30), (3, 4, 4805, 15), (3, 5, 10431, 3),
 		(4, 1, 10206, 50), (4, 2, 10207, 50), (4, 3, 10208, 50), (4, 4, 4805, 20), (4, 5, 10431, 5)
 	) AS v (level, slot, itemId, count)
+GO
+
+-- 2026-11-20 (redeem codes): the codes. kind E: for everyone (one key; each account once; maxUses, or no cap), L: only
+-- the accounts in WEB_CODE_ACCOUNT (one key), K: a batch of one-use keys. A code gives a VIP level (1-4) for vipDays
+-- days, the item stacks in WEB_CODE_ITEM, or both (usp_AdminCodeAdd refuses neither). What a code gives never changes
+-- after it is made; the owner can change its label and end time, and turn it off.
+IF OBJECT_ID(N'dbo.WEB_CODE', N'U') IS NULL
+	CREATE TABLE dbo.WEB_CODE (
+		id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_WEB_CODE PRIMARY KEY,
+		label varchar(64) NOT NULL,
+		kind char(1) NOT NULL,
+		vipLevel tinyint NOT NULL CONSTRAINT DF_WEB_CODE_vipLevel DEFAULT 0,
+		vipDays smallint NOT NULL CONSTRAINT DF_WEB_CODE_vipDays DEFAULT 0,
+		maxUses int NULL,
+		uses int NOT NULL CONSTRAINT DF_WEB_CODE_uses DEFAULT 0,
+		expiresAt datetime2(0) NOT NULL,
+		isOn bit NOT NULL CONSTRAINT DF_WEB_CODE_isOn DEFAULT 1,
+		createdAt datetime2(0) NOT NULL CONSTRAINT DF_WEB_CODE_createdAt DEFAULT SYSUTCDATETIME(),
+		createdBy varchar(32) NOT NULL,
+		CONSTRAINT CK_WEB_CODE CHECK (kind IN ('E', 'L', 'K')
+			AND ((vipLevel = 0 AND vipDays = 0) OR (vipLevel BETWEEN 1 AND 4 AND vipDays BETWEEN 1 AND 366))
+			AND (maxUses IS NULL OR maxUses >= 1))
+	)
+GO
+IF OBJECT_ID(N'dbo.WEB_CODE_ITEM', N'U') IS NULL
+	CREATE TABLE dbo.WEB_CODE_ITEM (
+		codeId int NOT NULL,
+		slot tinyint NOT NULL,
+		itemId int NOT NULL,
+		count int NOT NULL,
+		CONSTRAINT PK_WEB_CODE_ITEM PRIMARY KEY (codeId, slot),
+		CONSTRAINT CK_WEB_CODE_ITEM CHECK (slot BETWEEN 1 AND 6 AND count BETWEEN 1 AND 9999 AND itemId > 0)
+	)
+GO
+-- The key as players type it, without spaces or dashes, in capitals. usedBy: the account that used a one-use key.
+IF OBJECT_ID(N'dbo.WEB_CODE_KEY', N'U') IS NULL
+	CREATE TABLE dbo.WEB_CODE_KEY (
+		id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_WEB_CODE_KEY PRIMARY KEY,
+		codeId int NOT NULL,
+		keyText varchar(32) NOT NULL CONSTRAINT UQ_WEB_CODE_KEY_keyText UNIQUE,
+		usedBy varchar(32) NULL,
+		usedAt datetime2(0) NULL
+	)
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_WEB_CODE_KEY_code' AND object_id = OBJECT_ID(N'dbo.WEB_CODE_KEY'))
+	CREATE INDEX IX_WEB_CODE_KEY_code ON dbo.WEB_CODE_KEY (codeId, id)
+GO
+IF OBJECT_ID(N'dbo.WEB_CODE_ACCOUNT', N'U') IS NULL
+	CREATE TABLE dbo.WEB_CODE_ACCOUNT (
+		codeId int NOT NULL,
+		account varchar(32) NOT NULL,
+		CONSTRAINT PK_WEB_CODE_ACCOUNT PRIMARY KEY (codeId, account)
+	)
+GO
+-- Each redeem: who, which character the items go to, the VIP it gave (and the lower one it replaced), and when its
+-- mails were written (deliveredAt; set at once when the code gives no item). requestId: the game's id for one press
+-- of Redeem, so a press sent again after a lost answer gets the first answer back.
+IF OBJECT_ID(N'dbo.WEB_CODE_USE', N'U') IS NULL
+	CREATE TABLE dbo.WEB_CODE_USE (
+		id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_WEB_CODE_USE PRIMARY KEY,
+		codeId int NOT NULL,
+		keyId int NOT NULL,
+		account varchar(32) NOT NULL,
+		requestId varchar(64) NOT NULL,
+		idPlayer char(7) NOT NULL,
+		characterName varchar(32) NOT NULL,
+		usedAt datetime2(0) NOT NULL CONSTRAINT DF_WEB_CODE_USE_usedAt DEFAULT SYSUTCDATETIME(),
+		address varchar(45) NOT NULL,
+		vipLevel tinyint NOT NULL,
+		vipDays smallint NOT NULL,
+		vipEndsAt datetime2(0) NULL,
+		replacedLevel tinyint NULL,
+		replacedEndsAt datetime2(0) NULL,
+		deliveredAt datetime2(0) NULL,
+		deliveredTo char(7) NULL,
+		deliveredName varchar(32) NULL,
+		CONSTRAINT UQ_WEB_CODE_USE_account UNIQUE (codeId, account),
+		CONSTRAINT UQ_WEB_CODE_USE_request UNIQUE (account, requestId)
+	)
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_WEB_CODE_USE_delivered' AND object_id = OBJECT_ID(N'dbo.WEB_CODE_USE'))
+	CREATE INDEX IX_WEB_CODE_USE_delivered ON dbo.WEB_CODE_USE (deliveredAt, id)
 GO
 
 -- ---------------------------------------------------------------------------------------------------------------
@@ -687,6 +774,331 @@ ORDER BY id DESC
 GO
 
 -- ---------------------------------------------------------------------------------------------------------------
+-- 2026-11-20 (redeem codes): the site's check and redeem (flyffweb_site), the panel's codes (flyffweb_admin)
+-- ---------------------------------------------------------------------------------------------------------------
+-- The answers of check and redeem: 1 ok, 2 ok and it would replace a lower live VIP (check only: redeem then needs
+-- @confirm = 1), 3 the same request id was redeemed before (that use's answer again), -1 no such key, -2 past its end
+-- time, -3 turned off, -4 an everyone code at its cap, -5 a one-use key already used, -6 this account used the code,
+-- -7 the account is not on the code's list, -8 the account has a higher live VIP (the whole code is refused, items
+-- too), -9 it would replace a lower live VIP and @confirm is 0. Each answer: one row (the code's offer, NULL for -1;
+-- liveLevel/liveEndsAt: the account's live VIP, after the redeem for 1 and 3) and the code's items by slot.
+
+-- What a key would give this account now, without using it.
+IF OBJECT_ID(N'dbo.usp_WebCodeCheck', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_WebCodeCheck
+GO
+CREATE PROCEDURE dbo.usp_WebCodeCheck
+	@account varchar(32), @key varchar(32)
+AS
+SET NOCOUNT ON
+DECLARE @now datetime2(0), @keyId int, @codeId int, @usedBy varchar(32), @kind char(1), @label varchar(64), @vipLevel tinyint,
+	@vipDays smallint, @maxUses int, @uses int, @expiresAt datetime2(0), @isOn bit, @liveLevel tinyint, @liveEnds datetime2(0), @result int
+SET @now = SYSUTCDATETIME()
+SELECT @keyId = id, @codeId = codeId, @usedBy = usedBy FROM dbo.WEB_CODE_KEY WHERE keyText = @key
+IF @keyId IS NOT NULL
+	SELECT @kind = kind, @label = label, @vipLevel = vipLevel, @vipDays = vipDays, @maxUses = maxUses, @uses = uses,
+		@expiresAt = expiresAt, @isOn = isOn
+	FROM dbo.WEB_CODE WHERE id = @codeId
+SELECT @liveLevel = level, @liveEnds = endsAt FROM dbo.WEB_VIP WHERE account = @account AND endsAt > @now
+SET @result = CASE
+	WHEN @kind IS NULL THEN -1
+	WHEN @isOn = 0 THEN -3
+	WHEN @expiresAt <= @now THEN -2
+	WHEN EXISTS (SELECT 1 FROM dbo.WEB_CODE_USE WHERE codeId = @codeId AND account = @account) THEN -6
+	WHEN @kind = 'L' AND NOT EXISTS (SELECT 1 FROM dbo.WEB_CODE_ACCOUNT WHERE codeId = @codeId AND account = @account) THEN -7
+	WHEN @kind = 'K' AND @usedBy IS NOT NULL THEN -5
+	WHEN @kind = 'E' AND @maxUses IS NOT NULL AND @uses >= @maxUses THEN -4
+	WHEN @vipLevel > 0 AND @liveLevel > @vipLevel THEN -8
+	WHEN @vipLevel > 0 AND @liveLevel < @vipLevel THEN 2
+	ELSE 1 END
+SELECT @result AS result, CASE WHEN @result = -1 THEN NULL ELSE @codeId END AS codeId, @label AS label, @vipLevel AS vipLevel,
+	@vipDays AS vipDays, CONVERT(varchar(19), @expiresAt, 126) + 'Z' AS expiresAt,
+	@liveLevel AS liveLevel, CONVERT(varchar(19), @liveEnds, 126) + 'Z' AS liveEndsAt
+SELECT itemId, count FROM dbo.WEB_CODE_ITEM WHERE codeId = @codeId AND @result <> -1 ORDER BY slot
+GO
+
+-- Uses a key for the account, its items going to the character @idPlayer (the site checked it is the account's with
+-- usp_WebCodeCharacter). The checks, the use, the VIP (as Give VIP sets it: the same level while it runs gets the days
+-- added; another level starts now; the account's letter only over a player or VIP letter) are one transaction under
+-- key locks on the key, the code and the account's VIP row, so two redeems at once cannot both pass a cap or a
+-- one-use key. The items are mailed afterwards by the panel's login (usp_AdminCodePending / usp_AdminCodeMailSend).
+IF OBJECT_ID(N'dbo.usp_WebCodeRedeem', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_WebCodeRedeem
+GO
+CREATE PROCEDURE dbo.usp_WebCodeRedeem
+	@account varchar(32), @key varchar(32), @requestId varchar(64), @idPlayer char(7), @characterName varchar(32),
+	@address varchar(45), @confirm bit
+AS
+SET NOCOUNT ON
+SET XACT_ABORT ON
+DECLARE @now datetime2(0), @useId int, @keyId int, @codeId int, @usedBy varchar(32), @kind char(1), @label varchar(64),
+	@vipLevel tinyint, @vipDays smallint, @maxUses int, @uses int, @expiresAt datetime2(0), @isOn bit, @curLevel tinyint,
+	@curEnds datetime2(0), @liveLevel tinyint, @liveEnds datetime2(0), @result int, @start datetime2(0), @ends datetime2(0),
+	@replacedLevel tinyint, @replacedEnds datetime2(0), @delivered datetime2(0)
+SET @now = SYSUTCDATETIME()
+-- an answer lost on the way: the same press sent again gets the first answer back
+SELECT @useId = id FROM dbo.WEB_CODE_USE WHERE account = @account AND requestId = @requestId
+IF @useId IS NULL
+BEGIN
+	BEGIN TRANSACTION
+	SELECT @keyId = id, @codeId = codeId, @usedBy = usedBy FROM dbo.WEB_CODE_KEY WITH (UPDLOCK, HOLDLOCK) WHERE keyText = @key
+	IF @keyId IS NOT NULL
+		SELECT @kind = kind, @label = label, @vipLevel = vipLevel, @vipDays = vipDays, @maxUses = maxUses, @uses = uses,
+			@expiresAt = expiresAt, @isOn = isOn
+		FROM dbo.WEB_CODE WITH (UPDLOCK, HOLDLOCK) WHERE id = @codeId
+	-- the same press may have won the race while this one waited for the locks
+	SELECT @useId = id FROM dbo.WEB_CODE_USE WHERE account = @account AND requestId = @requestId
+	IF @useId IS NOT NULL
+		COMMIT
+	ELSE
+	BEGIN
+		SELECT @curLevel = level, @curEnds = endsAt FROM dbo.WEB_VIP WITH (UPDLOCK, HOLDLOCK) WHERE account = @account
+		IF @curEnds > @now SELECT @liveLevel = @curLevel, @liveEnds = @curEnds
+		SET @result = CASE
+			WHEN @kind IS NULL THEN -1
+			WHEN @isOn = 0 THEN -3
+			WHEN @expiresAt <= @now THEN -2
+			WHEN EXISTS (SELECT 1 FROM dbo.WEB_CODE_USE WHERE codeId = @codeId AND account = @account) THEN -6
+			WHEN @kind = 'L' AND NOT EXISTS (SELECT 1 FROM dbo.WEB_CODE_ACCOUNT WHERE codeId = @codeId AND account = @account) THEN -7
+			WHEN @kind = 'K' AND @usedBy IS NOT NULL THEN -5
+			WHEN @kind = 'E' AND @maxUses IS NOT NULL AND @uses >= @maxUses THEN -4
+			WHEN @vipLevel > 0 AND @liveLevel > @vipLevel THEN -8
+			WHEN @vipLevel > 0 AND @liveLevel < @vipLevel AND ISNULL(@confirm, 0) = 0 THEN -9
+			ELSE 1 END
+		IF @result <> 1
+		BEGIN
+			ROLLBACK
+			SELECT @result AS result, CAST(NULL AS int) AS useId, CASE WHEN @result = -1 THEN NULL ELSE @codeId END AS codeId,
+				@label AS label, @vipLevel AS vipLevel, @vipDays AS vipDays, CONVERT(varchar(19), @expiresAt, 126) + 'Z' AS expiresAt,
+				@liveLevel AS liveLevel, CONVERT(varchar(19), @liveEnds, 126) + 'Z' AS liveEndsAt
+			SELECT itemId, count FROM dbo.WEB_CODE_ITEM WHERE codeId = @codeId AND @result <> -1 ORDER BY slot
+			RETURN
+		END
+		IF @vipLevel > 0
+		BEGIN
+			IF @liveLevel = @vipLevel SET @start = @liveEnds ELSE SET @start = @now
+			SET @ends = DATEADD(day, @vipDays, @start)
+			IF @liveLevel < @vipLevel SELECT @replacedLevel = @liveLevel, @replacedEnds = @liveEnds
+			IF @curEnds IS NULL
+				INSERT dbo.WEB_VIP (account, level, endsAt) VALUES (@account, @vipLevel, @ends)
+			ELSE
+				UPDATE dbo.WEB_VIP SET level = @vipLevel, endsAt = @ends, updatedAt = @now WHERE account = @account
+			UPDATE dbo.ACCOUNT_TBL_DETAIL SET m_chLoginAuthority = CASE @vipLevel WHEN 1 THEN 'A' WHEN 2 THEN 'B' WHEN 3 THEN 'C' ELSE 'E' END
+			WHERE account = @account AND CAST(m_chLoginAuthority AS binary(1)) IN (0x46, 0x41, 0x42, 0x43, 0x45)
+		END
+		IF NOT EXISTS (SELECT 1 FROM dbo.WEB_CODE_ITEM WHERE codeId = @codeId) SET @delivered = @now
+		INSERT dbo.WEB_CODE_USE (codeId, keyId, account, requestId, idPlayer, characterName, usedAt, address, vipLevel, vipDays,
+			vipEndsAt, replacedLevel, replacedEndsAt, deliveredAt)
+		VALUES (@codeId, @keyId, @account, @requestId, @idPlayer, @characterName, @now, @address, @vipLevel, @vipDays,
+			@ends, @replacedLevel, @replacedEnds, @delivered)
+		SET @useId = SCOPE_IDENTITY()
+		UPDATE dbo.WEB_CODE SET uses = uses + 1 WHERE id = @codeId
+		IF @kind = 'K' UPDATE dbo.WEB_CODE_KEY SET usedBy = @account, usedAt = @now WHERE id = @keyId
+		COMMIT
+		SET @result = 1
+	END
+END
+-- the answer of a use: 1 for the one just made, 3 for one made before with this request id
+SELECT CASE WHEN @result = 1 THEN 1 ELSE 3 END AS result, u.id AS useId, c.id AS codeId, c.label, c.vipLevel, c.vipDays,
+	CONVERT(varchar(19), c.expiresAt, 126) + 'Z' AS expiresAt,
+	v.level AS liveLevel, CONVERT(varchar(19), v.endsAt, 126) + 'Z' AS liveEndsAt
+FROM dbo.WEB_CODE_USE u
+JOIN dbo.WEB_CODE c ON c.id = u.codeId
+LEFT JOIN dbo.WEB_VIP v ON v.account = u.account AND v.endsAt > SYSUTCDATETIME()
+WHERE u.id = @useId
+SELECT i.itemId, i.count FROM dbo.WEB_CODE_ITEM i JOIN dbo.WEB_CODE_USE u ON u.codeId = i.codeId WHERE u.id = @useId ORDER BY i.slot
+GO
+
+-- Makes a code with its items, its keys (<k>KEY</k>..., already in capitals without dashes) and, for kind L, its
+-- accounts (<a>name</a>...): one row, result 1 with the new id, -1 a key is taken (detail: that key), -2 an account
+-- does not exist (detail: that name), -3 a value out of range. Lists come as xml: the old databases' compatibility
+-- level may not have STRING_SPLIT. One transaction.
+IF OBJECT_ID(N'dbo.usp_AdminCodeAdd', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodeAdd
+GO
+CREATE PROCEDURE dbo.usp_AdminCodeAdd
+	@label varchar(64), @kind char(1), @vipLevel tinyint, @vipDays smallint, @maxUses int, @expiresAt datetime2(0), @admin varchar(32),
+	@item1 int = 0, @count1 int = 0, @item2 int = 0, @count2 int = 0, @item3 int = 0, @count3 int = 0,
+	@item4 int = 0, @count4 int = 0, @item5 int = 0, @count5 int = 0, @item6 int = 0, @count6 int = 0,
+	@keys xml, @accounts xml = NULL
+AS
+SET NOCOUNT ON
+SET XACT_ABORT ON
+DECLARE @id int, @taken varchar(32), @unknown varchar(32), @items int, @keyCount int, @accountCount int, @now datetime2(0)
+DECLARE @keyList TABLE (keyText varchar(32) NOT NULL PRIMARY KEY)
+DECLARE @accountList TABLE (account varchar(32) NOT NULL PRIMARY KEY)
+DECLARE @itemList TABLE (slot tinyint NOT NULL, itemId int NOT NULL, count int NOT NULL)
+SET @now = SYSUTCDATETIME()
+INSERT @keyList (keyText) SELECT DISTINCT t.k.value('.', 'varchar(32)') FROM @keys.nodes('/k') AS t(k)
+IF @accounts IS NOT NULL
+	INSERT @accountList (account) SELECT DISTINCT t.a.value('.', 'varchar(32)') FROM @accounts.nodes('/a') AS t(a)
+INSERT @itemList (slot, itemId, count)
+SELECT v.slot, v.itemId, v.count
+FROM (VALUES (1, @item1, @count1), (2, @item2, @count2), (3, @item3, @count3), (4, @item4, @count4), (5, @item5, @count5), (6, @item6, @count6))
+	AS v (slot, itemId, count)
+WHERE v.itemId > 0 AND v.count > 0
+SELECT @items = COUNT(*) FROM @itemList
+SELECT @keyCount = COUNT(*) FROM @keyList
+SELECT @accountCount = COUNT(*) FROM @accountList
+IF ISNULL(LTRIM(@label), '') = '' OR @kind IS NULL OR @kind NOT IN ('E', 'L', 'K')
+	OR @vipLevel IS NULL OR @vipDays IS NULL
+	OR NOT ((@vipLevel = 0 AND @vipDays = 0) OR (@vipLevel BETWEEN 1 AND 4 AND @vipDays BETWEEN 1 AND 366))
+	OR (@vipLevel = 0 AND @items = 0)
+	OR EXISTS (SELECT 1 FROM @itemList WHERE count > 9999)
+	OR @expiresAt IS NULL OR @expiresAt <= @now OR @expiresAt > DATEADD(day, 366, @now)
+	OR @keyCount = 0 OR @keyCount > 500 OR (@kind <> 'K' AND @keyCount <> 1)
+	OR EXISTS (SELECT 1 FROM @keyList WHERE LEN(keyText) < 4)
+	OR (@kind = 'L' AND (@accountCount = 0 OR @accountCount > 500)) OR (@kind <> 'L' AND @accountCount > 0)
+	OR (@maxUses IS NOT NULL AND (@kind <> 'E' OR @maxUses < 1))
+BEGIN
+	SELECT -3 AS result, CAST(NULL AS int) AS id, CAST(NULL AS varchar(32)) AS detail
+	RETURN
+END
+BEGIN TRANSACTION
+SELECT TOP 1 @taken = l.keyText FROM @keyList l JOIN dbo.WEB_CODE_KEY k WITH (UPDLOCK, HOLDLOCK) ON k.keyText = l.keyText ORDER BY l.keyText
+IF @taken IS NOT NULL
+BEGIN
+	ROLLBACK
+	SELECT -1 AS result, CAST(NULL AS int) AS id, @taken AS detail
+	RETURN
+END
+SELECT TOP 1 @unknown = l.account FROM @accountList l
+WHERE NOT EXISTS (SELECT 1 FROM dbo.ACCOUNT_TBL_DETAIL d WHERE d.account = l.account) ORDER BY l.account
+IF @unknown IS NOT NULL
+BEGIN
+	ROLLBACK
+	SELECT -2 AS result, CAST(NULL AS int) AS id, @unknown AS detail
+	RETURN
+END
+INSERT dbo.WEB_CODE (label, kind, vipLevel, vipDays, maxUses, expiresAt, createdBy)
+VALUES (@label, @kind, @vipLevel, @vipDays, @maxUses, @expiresAt, @admin)
+SET @id = SCOPE_IDENTITY()
+INSERT dbo.WEB_CODE_ITEM (codeId, slot, itemId, count) SELECT @id, slot, itemId, count FROM @itemList
+INSERT dbo.WEB_CODE_KEY (codeId, keyText) SELECT @id, keyText FROM @keyList
+-- each account as stored (its own spelling)
+INSERT dbo.WEB_CODE_ACCOUNT (codeId, account)
+SELECT DISTINCT @id, d.account FROM @accountList l JOIN dbo.ACCOUNT_TBL_DETAIL d ON d.account = l.account
+COMMIT
+SELECT 1 AS result, @id AS id, CAST(NULL AS varchar(32)) AS detail
+GO
+
+-- Every code, newest first, with its key counts and (for kinds E and L) its key; then every code's items.
+IF OBJECT_ID(N'dbo.usp_AdminCodeList', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodeList
+GO
+CREATE PROCEDURE dbo.usp_AdminCodeList
+AS
+SET NOCOUNT ON
+SELECT c.id, c.label, c.kind, c.vipLevel, c.vipDays, c.maxUses, c.uses, CONVERT(varchar(19), c.expiresAt, 126) + 'Z' AS expiresAt,
+	c.isOn, CONVERT(varchar(19), c.createdAt, 126) + 'Z' AS createdAt, c.createdBy,
+	(SELECT COUNT(*) FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id) AS keysTotal,
+	(SELECT COUNT(*) FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id AND k.usedBy IS NULL) AS keysUnused,
+	CASE WHEN c.kind <> 'K' THEN (SELECT TOP 1 k.keyText FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id ORDER BY k.id) END AS firstKey
+FROM dbo.WEB_CODE c
+ORDER BY c.id DESC
+SELECT codeId, slot, itemId, count FROM dbo.WEB_CODE_ITEM ORDER BY codeId, slot
+GO
+
+-- One code: its row (as in the list), its items, and its accounts (kind L).
+IF OBJECT_ID(N'dbo.usp_AdminCodeGet', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodeGet
+GO
+CREATE PROCEDURE dbo.usp_AdminCodeGet
+	@id int
+AS
+SET NOCOUNT ON
+SELECT c.id, c.label, c.kind, c.vipLevel, c.vipDays, c.maxUses, c.uses, CONVERT(varchar(19), c.expiresAt, 126) + 'Z' AS expiresAt,
+	c.isOn, CONVERT(varchar(19), c.createdAt, 126) + 'Z' AS createdAt, c.createdBy,
+	(SELECT COUNT(*) FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id) AS keysTotal,
+	(SELECT COUNT(*) FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id AND k.usedBy IS NULL) AS keysUnused,
+	CASE WHEN c.kind <> 'K' THEN (SELECT TOP 1 k.keyText FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id ORDER BY k.id) END AS firstKey
+FROM dbo.WEB_CODE c
+WHERE c.id = @id
+SELECT codeId, slot, itemId, count FROM dbo.WEB_CODE_ITEM WHERE codeId = @id ORDER BY slot
+SELECT account FROM dbo.WEB_CODE_ACCOUNT WHERE codeId = @id ORDER BY account
+GO
+
+-- A code's keys, in the order they were made, with who used each (one-use keys).
+IF OBJECT_ID(N'dbo.usp_AdminCodeKeys', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodeKeys
+GO
+CREATE PROCEDURE dbo.usp_AdminCodeKeys
+	@id int
+AS
+SET NOCOUNT ON
+SELECT keyText, usedBy, CONVERT(varchar(19), usedAt, 126) + 'Z' AS usedAt FROM dbo.WEB_CODE_KEY WHERE codeId = @id ORDER BY id
+GO
+
+-- Changes a code's label, end time and on/off: changed 1, or 0 (no such code, or a value out of range).
+IF OBJECT_ID(N'dbo.usp_AdminCodeSave', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodeSave
+GO
+CREATE PROCEDURE dbo.usp_AdminCodeSave
+	@id int, @label varchar(64), @expiresAt datetime2(0), @isOn bit
+AS
+SET NOCOUNT ON
+IF ISNULL(LTRIM(@label), '') = '' OR @expiresAt IS NULL OR @expiresAt > DATEADD(day, 366, SYSUTCDATETIME()) OR @isOn IS NULL
+BEGIN
+	SELECT 0 AS changed
+	RETURN
+END
+UPDATE dbo.WEB_CODE SET label = @label, expiresAt = @expiresAt, isOn = @isOn WHERE id = @id
+SELECT @@ROWCOUNT AS changed
+GO
+
+-- A code's latest uses, newest first.
+IF OBJECT_ID(N'dbo.usp_AdminCodeUses', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodeUses
+GO
+CREATE PROCEDURE dbo.usp_AdminCodeUses
+	@id int, @max int
+AS
+SET NOCOUNT ON
+SELECT TOP (@max) id, account, idPlayer, characterName, CONVERT(varchar(19), usedAt, 126) + 'Z' AS usedAt, address, vipLevel, vipDays,
+	CONVERT(varchar(19), vipEndsAt, 126) + 'Z' AS vipEndsAt, replacedLevel, CONVERT(varchar(19), replacedEndsAt, 126) + 'Z' AS replacedEndsAt,
+	CONVERT(varchar(19), deliveredAt, 126) + 'Z' AS deliveredAt, deliveredName
+FROM dbo.WEB_CODE_USE
+WHERE codeId = @id
+ORDER BY id DESC
+GO
+
+-- The uses whose mails are not written yet, oldest first, after the use @afterId (0: from the start), with their
+-- codes' items: the VIP job reads them a page at a time, so uses that wait never hold back the ones behind them.
+IF OBJECT_ID(N'dbo.usp_AdminCodePending', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodePending
+GO
+CREATE PROCEDURE dbo.usp_AdminCodePending
+	@max int, @afterId int
+AS
+SET NOCOUNT ON
+DECLARE @page TABLE (id int NOT NULL PRIMARY KEY, codeId int NOT NULL)
+INSERT @page (id, codeId) SELECT TOP (@max) id, codeId FROM dbo.WEB_CODE_USE WHERE deliveredAt IS NULL AND id > @afterId ORDER BY id
+SELECT u.id, u.codeId, c.label, u.account, u.idPlayer
+FROM @page p JOIN dbo.WEB_CODE_USE u ON u.id = p.id JOIN dbo.WEB_CODE c ON c.id = u.codeId
+ORDER BY u.id
+SELECT i.codeId, i.slot, i.itemId, i.count FROM dbo.WEB_CODE_ITEM i WHERE i.codeId IN (SELECT codeId FROM @page) ORDER BY i.codeId, i.slot
+GO
+
+-- One use whose mails are not written yet (right after its redeem), with its code's items; nothing when it was.
+IF OBJECT_ID(N'dbo.usp_AdminCodePendingOne', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodePendingOne
+GO
+CREATE PROCEDURE dbo.usp_AdminCodePendingOne
+	@useId int
+AS
+SET NOCOUNT ON
+SELECT u.id, u.codeId, c.label, u.account, u.idPlayer
+FROM dbo.WEB_CODE_USE u JOIN dbo.WEB_CODE c ON c.id = u.codeId
+WHERE u.id = @useId AND u.deliveredAt IS NULL
+SELECT i.codeId, i.slot, i.itemId, i.count
+FROM dbo.WEB_CODE_ITEM i JOIN dbo.WEB_CODE_USE u ON u.codeId = i.codeId
+WHERE u.id = @useId AND u.deliveredAt IS NULL
+ORDER BY i.slot
+GO
+
+-- Marks a use's mails written (once): to which character. changed 1, or 0 when it was marked already.
+IF OBJECT_ID(N'dbo.usp_AdminCodeMarkDelivered', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodeMarkDelivered
+GO
+CREATE PROCEDURE dbo.usp_AdminCodeMarkDelivered
+	@useId int, @idPlayer char(7), @characterName varchar(32)
+AS
+SET NOCOUNT ON
+UPDATE dbo.WEB_CODE_USE SET deliveredAt = SYSUTCDATETIME(), deliveredTo = @idPlayer, deliveredName = @characterName
+WHERE id = @useId AND deliveredAt IS NULL
+SELECT @@ROWCOUNT AS changed
+GO
+
+-- ---------------------------------------------------------------------------------------------------------------
 -- Who may run them (only logins already made by Install-WebLogin.ps1 / Install-AdminLogin.ps1)
 -- ---------------------------------------------------------------------------------------------------------------
 IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'flyffweb_site')
@@ -698,6 +1110,8 @@ BEGIN
 	GRANT EXECUTE ON OBJECT::dbo.usp_WebVipMine TO [flyffweb_site]
 	GRANT EXECUTE ON OBJECT::dbo.usp_WebVipRequestAdd TO [flyffweb_site]
 	GRANT EXECUTE ON OBJECT::dbo.usp_WebVipReceipt TO [flyffweb_site]
+	GRANT EXECUTE ON OBJECT::dbo.usp_WebCodeCheck TO [flyffweb_site]
+	GRANT EXECUTE ON OBJECT::dbo.usp_WebCodeRedeem TO [flyffweb_site]
 END
 GO
 IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'flyffweb_admin')
@@ -723,6 +1137,15 @@ BEGIN
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipGiftItemSet TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipGiftLog TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipEnd TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodeAdd TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodeList TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodeGet TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodeKeys TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodeSave TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodeUses TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodePending TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodePendingOne TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodeMarkDelivered TO [flyffweb_admin]
 END
 GO
 
@@ -816,8 +1239,90 @@ COMMIT
 SELECT 1 AS result, @idPlayer AS idPlayer, @name AS characterName
 GO
 
+-- 2026-11-20 (redeem codes): each code use whose mails were written, with the character they went to.
+IF OBJECT_ID(N'dbo.WEB_CODE_SENT', N'U') IS NULL
+	CREATE TABLE dbo.WEB_CODE_SENT (
+		useId int NOT NULL CONSTRAINT PK_WEB_CODE_SENT PRIMARY KEY,
+		idPlayer char(7) NOT NULL,
+		characterName varchar(32) NULL,
+		sentAt datetime2(0) NOT NULL CONSTRAINT DF_WEB_CODE_SENT_sentAt DEFAULT SYSUTCDATETIME()
+	)
+GO
+
+-- The character's name when @idPlayer is the account's, on server 01, and not deleted (no row otherwise): the site
+-- checks the character a redeem names before it uses the code.
+IF OBJECT_ID(N'dbo.usp_WebCodeCharacter', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_WebCodeCharacter
+GO
+CREATE PROCEDURE dbo.usp_WebCodeCharacter
+	@account varchar(32), @idPlayer char(7)
+AS
+SET NOCOUNT ON
+SELECT m_szName AS characterName FROM dbo.CHARACTER_TBL
+WHERE m_idPlayer = @idPlayer AND account = @account AND serverindex = '01' AND (isblock IS NULL OR isblock <> 'D')
+GO
+
+-- Writes a code use's mails, once, as usp_AdminVipGiftSend writes a gift box's: 1 sent, 2 sent before, 0 the account
+-- has no character yet. The character: @idPlayer (the one that redeemed) while it is still the account's and not
+-- deleted, else the gift boxes' rule (the one in the game now, else the most play time, else the lowest id). One mail
+-- per item stack into server index 51; the mails and the sent mark are one transaction.
+IF OBJECT_ID(N'dbo.usp_AdminCodeMailSend', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCodeMailSend
+GO
+CREATE PROCEDURE dbo.usp_AdminCodeMailSend
+	@useId int, @account varchar(32), @idPlayer char(7), @title varchar(128), @text varchar(255),
+	@item1 int = 0, @count1 int = 0, @item2 int = 0, @count2 int = 0, @item3 int = 0, @count3 int = 0,
+	@item4 int = 0, @count4 int = 0, @item5 int = 0, @count5 int = 0, @item6 int = 0, @count6 int = 0
+AS
+SET NOCOUNT ON
+SET XACT_ABORT ON
+DECLARE @to char(7), @name varchar(32), @tmCreate int, @nMail int, @slot int, @item int, @count int
+BEGIN TRANSACTION
+IF EXISTS (SELECT 1 FROM dbo.WEB_CODE_SENT WITH (UPDLOCK, HOLDLOCK) WHERE useId = @useId)
+BEGIN
+	SELECT @to = idPlayer, @name = characterName FROM dbo.WEB_CODE_SENT WHERE useId = @useId
+	COMMIT
+	SELECT 2 AS result, @to AS idPlayer, @name AS characterName
+	RETURN
+END
+SELECT @to = m_idPlayer, @name = m_szName FROM dbo.CHARACTER_TBL
+WHERE m_idPlayer = @idPlayer AND account = @account AND serverindex = '01' AND (isblock IS NULL OR isblock <> 'D')
+IF @to IS NULL
+	SELECT TOP 1 @to = m_idPlayer, @name = m_szName FROM dbo.CHARACTER_TBL
+	WHERE account = @account AND serverindex = '01' AND (isblock IS NULL OR isblock <> 'D')
+	ORDER BY CASE WHEN MultiServer > 0 THEN 0 ELSE 1 END, TotalPlayTime DESC, m_idPlayer
+IF @to IS NULL
+BEGIN
+	COMMIT
+	SELECT 0 AS result, CAST(NULL AS char(7)) AS idPlayer, CAST(NULL AS varchar(32)) AS characterName
+	RETURN
+END
+SET @tmCreate = DATEDIFF(second, '1970-01-01', SYSUTCDATETIME())
+SET @slot = 1
+WHILE @slot <= 6
+BEGIN
+	SELECT @item = CASE @slot WHEN 1 THEN @item1 WHEN 2 THEN @item2 WHEN 3 THEN @item3 WHEN 4 THEN @item4 WHEN 5 THEN @item5 ELSE @item6 END,
+		@count = CASE @slot WHEN 1 THEN @count1 WHEN 2 THEN @count2 WHEN 3 THEN @count3 WHEN 4 THEN @count4 WHEN 5 THEN @count5 ELSE @count6 END
+	IF @item > 0 AND @count > 0
+	BEGIN
+		SELECT @nMail = ISNULL(MAX(nMail), 0) + 1 FROM dbo.MAIL_TBL WITH (UPDLOCK, HOLDLOCK) WHERE serverindex = '51'
+		EXEC dbo.MAIL_STR @iGu = 'A1', @nMail = @nMail, @serverindex = '51', @idReceiver = @to, @idSender = '0000000',
+			@nGold = 0, @tmCreate = @tmCreate, @byRead = 0, @szTitle = @title, @szText = @text, @dwItemId = @item, @nItemNum = @count
+	END
+	SET @slot = @slot + 1
+END
+INSERT dbo.WEB_CODE_SENT (useId, idPlayer, characterName) VALUES (@useId, @to, @name)
+COMMIT
+SELECT 1 AS result, @to AS idPlayer, @name AS characterName
+GO
+
+IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'flyffweb_site')
+BEGIN
+	GRANT EXECUTE ON OBJECT::dbo.usp_WebCodeCharacter TO [flyffweb_site]
+END
+GO
+
 IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'flyffweb_admin')
 BEGIN
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminCodeMailSend TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipCharacterLetters TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipClearCharacterLetters TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipGiftSend TO [flyffweb_admin]
