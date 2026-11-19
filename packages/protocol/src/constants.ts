@@ -45,6 +45,11 @@ export const PacketType = {
   /** custom (owner 2026-11-19, VIP perks): the bag's VIP buttons (world/vipBag.ts; outer repo patch 2026-11-19-vip-bag-buttons). */
   VIP_SORT_INVENTORY: 0x8fff0102,
   VIP_PERIN_CONVERT: 0x8fff0103,
+  /**
+   * custom (owner 2026-11-19): Bozman's Craft Card (world/craftCard.ts). Not in V15: added by the outer repo's
+   * patches/2026-11-19-craft-card.patch (`PACKETTYPE_CRAFT_CARD`, `CDPSrvr::OnCraftCard`).
+   */
+  CRAFT_CARD: 0x8fff0110,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,

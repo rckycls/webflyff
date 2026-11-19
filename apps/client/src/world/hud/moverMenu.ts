@@ -53,7 +53,15 @@ export const MMI = {
   GUILDCOMBAT_SELECTION: 33, GUILDCOMBAT_JACKPOT: 34, GUILDCOMBAT_JACKPOT2: 35, GUILDCOMBAT_BESTPLAYER: 36,
   GUILDCOMBAT_INFO_BOARD1: 37, GUILDCOMBAT_INFO_BOARD2: 38, GUILDCOMBAT_INFO_BOARD3: 39, GUILDCOMBAT_INFO_TEX: 40,
   GUILDCOMBAT_PENYA_RETURN: 41,
+  /**
+   * custom (owner 2026-11-19): Bozman's "Craft Card" (items/craftCardWindow.ts). Not an MMI: the web client adds the line
+   * itself for `MaSa_Bozman` (`CRAFT_CARD_NPC`), so neither character.inc nor a convert changes; the World checks Bozman by
+   * his key. A number no MMI uses.
+   */
+  CRAFT_CARD: 9201,
 } as const;
+/** custom (owner 2026-11-19): the NPC whose menu gets "Craft Card" (Saint Morning's armour shop). */
+export const CRAFT_CARD_NPC = 'masa_bozman';
 /** 2026-11-15: personal housing's entries (`WndWorld.cpp:5221-5234`). */
 const HOUSING_ENTRIES: ReadonlySet<number> = new Set([
   MMI.VISIT_MYROOM, MMI.VISIT_FRIEND, MMI.RETURNTO_WORLD,
@@ -124,6 +132,13 @@ export function menuLabel(id: number, texts: Texts, fallback: string): string {
  * player has a guild and the server's ENABLE_GUILD_INVENTORY is on: Guild Warehouse shows only then (:6669-6674).
  */
 export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJob: boolean, guildBank = false): MenuEntry[] {
+  const entries = v15MenuEntries(npc, texts, ownIsBaseJob, guildBank);
+  // custom (owner 2026-11-19): Bozman's Craft Card, last
+  if (npc?.key.toLowerCase() === CRAFT_CARD_NPC) entries.push({ id: MMI.CRAFT_CARD, label: 'Craft Card', enabled: true });
+  return entries;
+}
+
+function v15MenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJob: boolean, guildBank: boolean): MenuEntry[] {
   const ids = [...new Set(npc?.menus ?? [])].sort((a, b) => a - b);
   const labels = new Map([...texts.values()].map((text) => [text.textId, text.text]));
   return ids

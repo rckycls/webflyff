@@ -88,6 +88,7 @@ export * from './world/couple'; // 2026-11-15 (social)
 export * from './world/duel'; // 2026-11-15 (social)
 export * from './world/queryEquip'; // 2026-11-17 (view-equip-options)
 export * from './world/hpLayer';
+export * from './world/craftCard'; // custom (owner 2026-11-19): Bozman's Craft Card
 export * from './world/tax'; // 2026-11-15
 export * from './world/guildCombat'; // 2026-11-15: the Guild Siege
 export * from './world/authority'; // 2026-11-17: the authority letters, VIP1-VIP4 (vip-auth)

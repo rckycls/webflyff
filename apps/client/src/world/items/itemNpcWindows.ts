@@ -3,6 +3,8 @@
 // presses go to the open one, and the moves, the bag's close and the answers to each.
 
 import type { WebPiercingAvail } from '@flyffweb/formats';
+import { CraftCardWindow } from './craftCardWindow';
+import type { CraftCardHost } from './craftCardWindow';
 import { JewelMenuWindows } from './jewelMenuWindows';
 import type { BagPress, NpcWindow, NpcWindowHost } from './npcWindowKit';
 import { RemoveAttributeWindow, RemovePiercingWindow } from './removalWindows';
@@ -16,17 +18,25 @@ export class ItemNpcWindows {
   readonly removePiercing: RemovePiercingWindow;
   readonly repair: RepairWindow;
   readonly resistItem: ResistItemWindow;
+  /** custom (owner 2026-11-19): Bozman's Craft Card (craftCardWindow.ts). */
+  readonly craftCard: CraftCardWindow;
 
-  constructor(host: NpcWindowHost, extra: { cards: () => ReadonlyMap<number, WebPiercingAvail['params']>; repairBusy: RepairBusy }) {
+  constructor(host: NpcWindowHost, extra: {
+    cards: () => ReadonlyMap<number, WebPiercingAvail['params']>;
+    repairBusy: RepairBusy;
+    /** custom (owner 2026-11-19): what the Craft Card needs beyond the kit's host. */
+    craft: Pick<CraftCardHost, 'authorization' | 'sayText' | 'confirm' | 'askTries'>;
+  }) {
     this.jewels = new JewelMenuWindows(host);
     this.removeAttribute = new RemoveAttributeWindow(host);
     this.removePiercing = new RemovePiercingWindow(host, extra.cards);
     this.repair = new RepairWindow(host, extra.repairBusy);
     this.resistItem = new ResistItemWindow(host);
+    this.craftCard = new CraftCardWindow({ ...host, ...extra.craft });
   }
 
   get all(): NpcWindow[] {
-    return [...this.jewels.all, this.removeAttribute, this.removePiercing, this.repair, this.resistItem];
+    return [...this.jewels.all, this.removeAttribute, this.removePiercing, this.repair, this.resistItem, this.craftCard];
   }
 
   get isOpen(): boolean {

@@ -3,6 +3,7 @@ import { GAME_DATA_KEYS, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type { WebExpRow, WebItemProp, WebJob, WebMover, WebSkill } from '@flyffweb/formats';
 import { GameDataMissingError, loadGameData } from '../src/world/gameData';
 import { GROUND_MOUNT_ITEM } from '../src/world/mount/groundMount';
+import { CRAFT_STONE } from '../src/world/items/craftCardRules';
 import { catalogFiles, storeOf } from './helpers/gameDataFiles';
 
 /** The Wooden Sword as the converter writes it. */
@@ -63,8 +64,9 @@ describe('loadGameData: the combat catalogs', () => {
   it('itemProps are looked up by item id', async () => {
     const other: WebItemProp = { ...WOODEN_SWORD, id: 22, name: 'Bat', model: null, icon: null, sfxHit: -1 };
     const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.itemProps]: [WOODEN_SWORD, other] })));
-    // numbers, in file order; then the ground mount's custom item, which no client pack has (2026-11-18)
-    expect([...data.itemProps.keys()]).toEqual([21, 22, GROUND_MOUNT_ITEM]);
+    // numbers, in file order; then the ground mount's custom item, which no client pack has (2026-11-18), and the Craft
+    // Stone (custom, owner 2026-11-19)
+    expect([...data.itemProps.keys()]).toEqual([21, 22, GROUND_MOUNT_ITEM, CRAFT_STONE]);
     expect(data.itemProps.get(21)).toEqual(WOODEN_SWORD);
     expect(data.itemProps.get(21)!.attackSpeed).toBe(Math.fround(0.085));
     expect(data.itemProps.get(22)).toMatchObject({ name: 'Bat', model: null, icon: null });
@@ -82,7 +84,7 @@ describe('loadGameData: the combat catalogs', () => {
   it('a repeated item id keeps the later row, as CFixedArray::SetAtGrow does', async () => {
     const later = { ...WOODEN_SWORD, name: 'Later' };
     const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.itemProps]: [WOODEN_SWORD, later] })));
-    expect(data.itemProps.size).toBe(2); // the sword once, and the ground mount's item (2026-11-18)
+    expect(data.itemProps.size).toBe(3); // the sword once, the ground mount's item (2026-11-18) and the Craft Stone (2026-11-19)
     expect(data.itemProps.get(21)!.name).toBe('Later');
   });
 

@@ -3280,6 +3280,43 @@ fieldset:disabled .btn {
 .hud-jewel-model { position: absolute; left: 0; top: 0; pointer-events: none; }
 .hud-jewel-setting [data-control="WIDC_CUSTOM1"]:not([data-model]) .hud-jewel-model,
 .hud-jewel-setting [data-control="WIDC_CUSTOM1"][data-model] .hud-jewel-weapon { display: none; }
+/* custom (owner 2026-11-19): Bozman's Craft Card (items/craftCardWindow.ts): the chance in V15 blue, the word buttons and the
+   check box in Auto Play's silver V15 look (copied, not shared, so the Auto Play rules stay as they are), the Result part
+   over its tiles */
+.hud-craft-card [data-control="WIDC_INFO"] {
+  display: flex; flex-direction: column; justify-content: center; gap: 3px; color: #000000; font: 12px/15px Verdana, Tahoma, sans-serif;
+}
+.hud-craft-card .craft-card-chance { color: #2e70a9; font-weight: bold; }
+.hud-craft-card [data-control="WIDC_ACTIONS"] { display: flex; align-items: center; gap: 6px; font: 11px/14px Verdana, Tahoma, sans-serif; }
+.hud-craft-card .auto-word {
+  box-sizing: border-box; min-width: 22px; height: 22px; padding: 0 6px; border: 1px solid #a3a3a3; border-radius: 5px;
+  background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3); box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px #00000033;
+  color: #ffffff; font: bold 11px/20px Verdana, Tahoma, sans-serif; white-space: nowrap; cursor: pointer;
+  text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d;
+}
+.hud-craft-card .auto-word:active:not(:disabled) { background: linear-gradient(#e9e9e9, #dadada); }
+.hud-craft-card .auto-word:disabled { opacity: 0.5; cursor: default; }
+.hud-craft-card .craft-card-go { min-width: 64px; }
+.hud-craft-card .craft-card-bulk { display: inline-flex; align-items: center; justify-content: center; width: 26px; padding: 0; color: #4b4b4b; }
+.hud-craft-card .craft-card-bulk[hidden], .hud-craft-card .craft-card-stop[hidden] { display: none; }
+.hud-craft-card .auto-check {
+  display: flex; align-items: center; gap: 4px; min-height: 18px; padding: 0; border: 0; background: none;
+  color: #000000; font: inherit; text-align: left; cursor: pointer;
+}
+.hud-craft-card .auto-v15-check { flex: none; width: 14px; height: 14px; background-repeat: no-repeat; background-position: -14px 0; }
+.hud-craft-card .auto-v15-check[data-frame='3'] { background-position: -42px 0; }
+.hud-craft-card .auto-check:hover .auto-v15-check[data-frame='1'] { background-position: 0 0; }
+.hud-craft-card .auto-check:hover .auto-v15-check[data-frame='3'] { background-position: -28px 0; }
+.hud-craft-card .craft-card-result {
+  position: absolute; inset: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; padding: 6px; overflow: auto;
+  color: #000000; font: 12px/15px Verdana, Tahoma, sans-serif;
+}
+.hud-craft-card .craft-card-result-title { color: #2e70a9; font-weight: bold; text-align: center; }
+.hud-craft-card .craft-card-result-head { font-weight: bold; text-align: center; color: #b02a2a; }
+.hud-craft-card .craft-card-result-head[data-success='true'] { color: #1d7d1d; }
+.hud-craft-card .craft-card-result-row { display: flex; align-items: center; gap: 6px; }
+.hud-craft-card .craft-card-result-icon { position: relative; flex: none; width: 32px; height: 32px; }
+.hud-craft-card .craft-card-result-icon .hud-res-slot { position: absolute; left: 0; top: 0; }
 
 /* 2026-11-10: the guild (guild/guildHud.ts, hud/guild/*.ts; docs/superpowers/specs/2026-11-10-guild-research.md §3).
    CWndGuild's five tabs are their resdata.inc entries in the tab control; the member list (CWndGuildTabMember::OnDraw,
@@ -3998,6 +4035,30 @@ fieldset:disabled .btn {
   .hud-mix-jewel > .hud-window-body { display: grid; grid-template-columns: repeat(5, 40px); justify-content: center; gap: 6px; }
   .hud-mix-jewel [data-control="WIDC_TEXT1"] { grid-column: 1 / -1; --text-max: 76px; }
   .hud-mix-jewel [data-control="WIDC_START"] { grid-column: 1 / -1; }
+
+  /* custom (owner 2026-11-19): the Craft Card: the stone, the five cards, the chance, the buttons, then the Result under them
+     (the desktop has it at the right) */
+  .hud-craft-card { --panel-width: 330px; }
+  .hud-craft-card > .hud-window-body {
+    display: grid; grid-template-columns: auto repeat(5, 40px); gap: 6px; align-items: center; justify-content: center;
+    grid-template-areas: 'sl ss . . . .' 'cl c1 c2 c3 c4 c5' 'in in in in ca ca' 'ac ac ac ac ac ac' 're re re re re re';
+  }
+  .hud-craft-card [data-control="WIDC_ST_STONE"] { grid-area: sl; }
+  .hud-craft-card [data-control="WIDC_SLOT_STONE"] { grid-area: ss; }
+  .hud-craft-card [data-control="WIDC_ST_CARDS"] { grid-area: cl; }
+  .hud-craft-card [data-control="WIDC_SLOT_CARD1"] { grid-area: c1; }
+  .hud-craft-card [data-control="WIDC_SLOT_CARD2"] { grid-area: c2; }
+  .hud-craft-card [data-control="WIDC_SLOT_CARD3"] { grid-area: c3; }
+  .hud-craft-card [data-control="WIDC_SLOT_CARD4"] { grid-area: c4; }
+  .hud-craft-card [data-control="WIDC_SLOT_CARD5"] { grid-area: c5; }
+  .hud-craft-card [data-control="WIDC_INFO"] { grid-area: in; width: auto !important; height: auto !important; font-size: 13px; }
+  .hud-craft-card [data-control="WIDC_ACTIONS"] { grid-area: ac; width: auto !important; height: auto !important; flex-wrap: wrap; font-size: 12px; }
+  .hud-craft-card [data-control="WIDC_CANCEL"] { grid-area: ca; }
+  .hud-craft-card [data-control="WIDC_RESULT"] { grid-area: re; width: auto !important; height: 84px !important; overflow: hidden; }
+  .hud-craft-card .auto-word { min-width: 30px; height: 30px; font-size: 12px; line-height: 28px; }
+  .hud-craft-card .craft-card-go { min-width: 80px; }
+  .hud-craft-card .craft-card-bulk { width: 36px; }
+  .hud-craft-card .auto-check { min-height: 30px; }
 
   /* Jewel Setting: the weapon on Window01 with its sockets beside it, the words at the right, START under them */
   .hud-jewel-setting { --panel-width: 380px; }

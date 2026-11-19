@@ -22,6 +22,17 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
     expect(npcMenuEntries(door, TEXTS, false).map((e) => [e.id, e.enabled])).toEqual([[123, true], [124, true]]);
   });
 
+  it("custom (owner 2026-11-19): Bozman's menu is Dialog, Trade, Craft Card (the last added by the web client, no MMI)", () => {
+    const bozman: WebNpc = { key: 'MaSa_Bozman', name: 'Bozman', menus: [0, 2], vendorTabs: { 0: 'Mercenary' } };
+    expect(npcMenuEntries(bozman, TEXTS, false)).toEqual([
+      { id: MMI.DIALOG, label: 'Dialog', enabled: true },
+      { id: MMI.TRADE, label: 'Trade', enabled: true },
+      { id: MMI.CRAFT_CARD, label: 'Craft Card', enabled: true },
+    ]);
+    expect(soleEntry(bozman, npcMenuEntries(bozman, TEXTS, false))).toBeNull();
+    expect(npcMenuEntries(JULIA, TEXTS, false).some((entry) => entry.id === MMI.CRAFT_CARD)).toBe(false);
+  });
+
   it('2026-11-15: Guild Warehouse shows, enabled, with a guild and the guild bank on (:6669-6674)', () => {
     const entry = npcMenuEntries(JULIA, TEXTS, false, true).find((e) => e.id === MMI.GUILDBANKING);
     expect(entry).toEqual({ id: 15, label: 'Guild Warehouse', enabled: true });

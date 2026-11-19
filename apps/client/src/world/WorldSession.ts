@@ -23,6 +23,7 @@ import {
   encodePiercingRemove, encodeRemoveAttribute, encodeRepairItem, encodeUltimateMakeItem, encodeUltimateRemoveGem,
   encodeUltimateTransWeapon,
 } from '@flyffweb/protocol';
+import { encodeCraftCard } from '@flyffweb/protocol'; // custom (owner 2026-11-19): Bozman's Craft Card
 import type { NpcWindowPacket } from './items/npcWindowKit';
 import {
   encodeAddPartyMember, encodeBlock, encodeChangeTroup, encodePartyChangeLeader, encodePartyExpMode, encodePartyItemMode,
@@ -171,6 +172,12 @@ export class WorldSession {
       case 'piercingRemove': cache.send(encodePiercingRemove(packet.itemId)); return;
       case 'removeAttribute': cache.send(encodeRemoveAttribute(packet.itemId)); return;
       case 'repair': cache.send(encodeRepairItem(packet.objectIds)); return;
+      // custom (owner 2026-11-19): Bozman's Craft Card (CRAFT_CARD 0x8fff0110)
+      case 'craftCard': {
+        const { npcId, stoneId, cardIds, tries, stopOnSuccess } = packet;
+        cache.send(encodeCraftCard({ npcId, stoneId, cardIds, tries, stopOnSuccess }));
+        return;
+      }
     }
   }
   /** 2026-11-05: the item windows' packets (world/itemWindows.ts in the protocol). */

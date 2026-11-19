@@ -31,10 +31,11 @@ import type { GuildCombatMessage } from './guildCombat';
 import type { PocketMessage } from './pocket'; // 2026-11-17 (extra bag)
 import type { QueryEquipMessage } from './queryEquip'; // 2026-11-17 (view-equip-options)
 import type { VipBagMessage } from './vipBag'; // 2026-11-19 (VIP perks)
+import type { CraftCardMessage } from './craftCard'; // custom (owner 2026-11-19)
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
   | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | HousingMessage | GuildHouseMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
-  | TaxMessage
+  | TaxMessage | CraftCardMessage
   | CoupleMessage | DuelMessage | GuildCombatMessage | PocketMessage | QueryEquipMessage | VipBagMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
