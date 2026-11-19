@@ -8,7 +8,8 @@ import type { OwnState } from '../OwnState';
 import type { GameData } from '../gameData';
 import { themeUrl } from './art';
 import type { UiArt } from './art';
-import { padField } from './amountBox';
+import { DropWindows, dropStart } from './dropWindows';
+import { setIconDrag } from './dragIcon';
 import { WindowFrame } from './frame';
 import { fitsEquipmentSlot } from '../items/equipment';
 import { usableFromBag } from '../items/travelItems';
@@ -64,7 +65,17 @@ export interface InventoryActions {
   vip?: { level(): number; sort(): void; perin(): void };
   /** 2026-11-09 (pets R2): the own player has the buff, for the tooltips that ask (PutPetFeedPocket). */
   hasBuff?(buffType: number, id: number): boolean;
+  /** 2026-11-20 (mouse-drag-ui): a line in the system messages (`PutString( prj.GetText( tid ) )`). */
+  say?(tid: string): void;
+  /**
+   * 2026-11-20 (mouse-drag-ui): the TID that refuses a ground drop now, before any box opens (a shop, a bank, the trade...
+   * open: TID_GAME_TRADELIMITITEM, WndWorld.cpp:7776-7808), or null.
+   */
+  dropLimit?(): string | null;
 }
+
+/** 2026-11-20: the penya sack's picture, dragged at the cursor (`CWndGold::OnInitialUpdate`, WndField.cpp:504-507). */
+const PENYA_ICON = 'ui/item/itm_golgolseed.png';
 
 export class InventoryWindow {
   readonly frame: WindowFrame;
@@ -101,6 +112,10 @@ export class InventoryWindow {
   private hoverAnchor: HTMLElement | null = null;
   /** 2026-11-15: the second the open tooltip was last made (its cool-down and time left tick, as Neuz puts it each frame). */
   private detailsSecond = -1;
+  /** 2026-11-20 (mouse-drag-ui): the V15 ground-drop boxes (dropWindows.ts), and the penya sack's drag and picture. */
+  private readonly dropWindows: DropWindows;
+  private penyaDragged = false;
+  private readonly penyaIcon: HTMLImageElement;
   constructor(private readonly art: UiArt, private readonly data: GameData,
     private readonly actions: InventoryActions, private readonly doc: Document = document) {
     this.frame = new WindowFrame('Inventory', art, { width: 240, height: 464, texture: 'WndInventory3D.tga' }, doc);
@@ -111,7 +126,12 @@ export class InventoryWindow {
     if (hammer !== '') this.frame.element.style.setProperty('--hud-hammer', `url(${JSON.stringify(hammer)}) 0 0, crosshair`);
     doc.addEventListener('dragover', this.onDragOver);
     doc.addEventListener('drop', this.onDrop);
-    this.frame.onClose = () => { if (this.shopSelect) this.onShopClose?.(); this.dragged = null; this.actionsOpen = false; this.frame.element.querySelector('.inventory-drop-dialog')?.remove(); this.actions.upgrade?.cancel(); this.actions.closed?.(); };
+    this.dropWindows = new DropWindows(art, doc);
+    // loaded now, so a drag can use it at once (`setDragImage` takes only a loaded picture)
+    this.penyaIcon = doc.createElement('img');
+    this.penyaIcon.src = art.url(PENYA_ICON);
+    // the drop boxes are Neuz's own windows (g_WndMng's): they stay when the bag closes
+    this.frame.onClose = () => { if (this.shopSelect) this.onShopClose?.(); this.dragged = null; this.actionsOpen = false; this.actions.upgrade?.cancel(); this.actions.closed?.(); };
     // 2026-11-05: a right click on the bag ends the upgrade mode (CWndInventory::OnRButtonUp, WndField.cpp:2806)
     this.frame.element.addEventListener('contextmenu', () => this.actions.upgrade?.cancel());
   }
@@ -130,6 +150,7 @@ export class InventoryWindow {
   }
   update(own: OwnState, force = false): void {
     this.own = own;
+    this.dropWindows.check();
     if (this.frame.isOpen) {
       const mobile = this.frame.element.hasAttribute('data-mobile-window');
       if (mobile !== this.mobile) { this.mobile = mobile; force = true; }
@@ -253,13 +274,16 @@ export class InventoryWindow {
         // a ride (PARTS_RIDE) is used, not equipped (Piece 7 M5)
         if ((prop?.part ?? -1) >= 0 && !isRideProp(prop)) this.actions.equip(id, event.shiftKey); else this.actions.use(id, event.shiftKey);
       });
-      cell.draggable = !!item && !held && !this.mobile && !this.shopSelect;
+      // 2026-11-20 (mouse-drag-ui): and while the NPC shop is open, to sell on its window (CWndShop::OnChildNotify)
+      cell.draggable = !!item && !held && !this.mobile;
       cell.addEventListener('dragstart', (event) => {
         if (!item || this.mobile || this.own?.equipmentObjectIds.includes(id)) { event.preventDefault(); return; }
         this.dragged = { id, itemId: item.itemId };
         this.actionsOpen = false; this.drawDetails();
         event.dataTransfer?.setData('application/x-flyff-inventory', String(id));
         if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+        // 2026-11-20 (mouse-drag-ui): the item's own icon at the cursor, its middle on it (Neuz.cpp:819-830: -16, -16)
+        setIconDrag(event, cell.querySelector('img'));
       });
       cell.addEventListener('dragend', () => { this.dragged = null; });
       grid.append(cell);
@@ -318,7 +342,11 @@ export class InventoryWindow {
     footer.addEventListener('dragstart', (event) => {
       event.dataTransfer?.setData('application/x-flyff-penya', String(own.gold));
       if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      // 2026-11-20 (mouse-drag-ui): itm_GolGolSeed at the cursor, as an item's icon; on the world it is refused (`onDrop`)
+      setIconDrag(event, this.penyaIcon);
+      this.penyaDragged = true;
     });
+    footer.addEventListener('dragend', () => { this.penyaDragged = false; });
     footer.addEventListener('click', () => { if (this.mobile && this.trade?.active() === true) this.trade.tapPenya(); });
     bag.append(scroll, footer);
     // custom (owner 2026-11-19, VIP perks): sort and Penya -> Perin beside the penya, for VIP1-VIP4 only
@@ -574,30 +602,45 @@ export class InventoryWindow {
     }
   }
 
+  /**
+   * 2026-11-20 (mouse-drag-ui): a bag item put on the ground, by a drag onto the world or the phone card's Drop:
+   * `CWndWorld::OnDropIcon`'s checks (WndWorld.cpp:7776-7808, :7860-7926), then Neuz's own box (dropWindows.ts): a quest
+   * item's warning, one item's Yes/No, or a stack's count box filled with the whole stack. The send is `actions.drop`.
+   */
   private requestDrop(id: number): void {
-    const item = this.own?.inventory?.get(id);
-    if (!item || this.own!.equipmentObjectIds.includes(id) || this.own!.hp <= 0) return;
+    const own = this.own, item = own?.inventory?.get(id);
+    if (!own || !item || own.equipmentObjectIds.includes(id) || own.hp <= 0) return;
     this.actionsOpen = false; this.drawDetails();
-    this.frame.element.querySelector('.inventory-drop-dialog')?.remove();
-    const dialog = this.doc.createElement('div'); dialog.className = 'inventory-drop-dialog';
-    dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-label', 'Drop item');
-    const title = this.doc.createElement('strong'); title.textContent = `Drop ${this.data.itemProps.get(item.itemId)?.name ?? 'item'}?`;
-    const quantity = this.doc.createElement('input'); quantity.type = 'number'; quantity.min = '1'; quantity.max = String(item.count); quantity.value = '1';
-    quantity.setAttribute('aria-label', 'Drop quantity');
-    // 2026-11-16 (owner): the phone's number pad, as the bank's and the mail's amounts (`padField`)
-    padField(quantity, this.art, this.doc, () => ({ max: this.own?.inventory?.get(id)?.count ?? 0, min: 1, label: 'Number:', title: 'Drop' }));
-    const confirm = this.doc.createElement('button'); confirm.type = 'button'; confirm.textContent = 'Drop';
-    confirm.addEventListener('click', () => {
-      const count = Number(quantity.value), current = this.own?.inventory?.get(id);
-      if (current?.itemId !== item.itemId || !Number.isInteger(count) || count < 1 || count > current.count || this.own!.equipmentObjectIds.includes(id)) return;
-      this.actions.drop(id, count); dialog.remove();
-    });
-    const cancel = this.doc.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel'; cancel.addEventListener('click', () => dialog.remove());
-    dialog.append(title, quantity, confirm, cancel); this.frame.element.append(dialog);
+    const limit = this.actions.dropLimit?.() ?? null;
+    if (limit !== null) { this.actions.say?.(limit); return; }
+    const start = dropStart(item, this.data.itemProps.get(item.itemId), this.actions.held?.(id) === true);
+    if (start.kind === 'say') { this.actions.say?.(start.tid); return; }
+    const layer = this.frame.element.parentElement;
+    if (start.kind === 'none' || layer === null) return;
+    const now = (): InventoryItem | undefined => {
+      const current = this.own?.inventory?.get(id);
+      return current?.itemId === item.itemId && this.own?.equipmentObjectIds.includes(id) !== true ? current : undefined;
+    };
+    this.dropWindows.start(start.kind, {
+      item: now,
+      inUse: () => this.actions.held?.(id) === true,
+      send: (count) => {
+        const current = now();
+        if (current !== undefined && (this.own?.hp ?? 0) > 0) this.actions.drop(id, Math.min(count, current.count));
+      },
+      // the catalog keeps Neuz's "\n" as two letters: a line break
+      questText: () => (this.data.texts.get('TID_GAME_QUEITMWARNING')?.text
+        || 'The quest will not progress without this item. Continue discarding item?').replace(/\\n/g, '\n'),
+    }, layer);
+  }
+
+  /** 2026-11-20: whether a drag event is over the 3D world (the ground), not a window. */
+  private overWorld(event: DragEvent): boolean {
+    return (event.target as Element | null)?.matches?.('.world-view canvas') === true;
   }
 
   private readonly onDragOver = (event: DragEvent): void => {
-    if (this.dragged || this.foreignType(event) !== null) event.preventDefault();
+    if (this.dragged || this.foreignType(event) !== null || (this.penyaDragged && this.overWorld(event))) event.preventDefault();
   };
 
   /** 2026-11-10 (bank-mail): the foreign drag type over the open bag, or null. */
@@ -616,6 +659,14 @@ export class InventoryWindow {
   private readonly onDrop = (event: DragEvent): void => {
     const drag = this.dragged; this.dragged = null;
     if (!drag) {
+      // 2026-11-20 (mouse-drag-ui): the penya sack on the ground: the windows' refusal first, then TID_GAME_CANNOT_DROPMONEY
+      // (WndWorld.cpp:7776-7808, :7837-7843)
+      if (this.penyaDragged && this.overWorld(event)) {
+        event.preventDefault();
+        this.penyaDragged = false;
+        this.actions.say?.(this.actions.dropLimit?.() ?? 'TID_GAME_CANNOT_DROPMONEY');
+        return;
+      }
       const type = this.foreignType(event);
       if (type !== null && event.dataTransfer !== null) {
         event.preventDefault();
@@ -638,11 +689,12 @@ export class InventoryWindow {
     }
     const shortcut = target?.closest?.<HTMLElement>('.hud-slot[data-row="item"]');
     if (shortcut) { this.actions.shortcut(drag.id, Number(shortcut.dataset.slot)); return; }
-    if (target?.matches?.('.world-view canvas')) this.requestDrop(drag.id);
+    if (this.overWorld(event)) this.requestDrop(drag.id);
   };
 
   dispose(): void {
     this.doc.removeEventListener('dragover', this.onDragOver); this.doc.removeEventListener('drop', this.onDrop);
+    this.dropWindows.dispose();
     this.frame.close(); this.frame.element.remove();
   }
 }

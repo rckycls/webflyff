@@ -84,7 +84,9 @@ test('the phone bag: its buttons close the tooltip, it scrolls a row at a time, 
   await expect(details).toBeVisible();
   await details.locator('[data-item-action="drop"]').click();
   await expect(details).toHaveCount(0);
-  await page.getByRole('dialog', { name: 'Drop item', exact: true }).getByRole('button', { name: 'Cancel' }).click();
+  // 2026-11-20 (mouse-drag-ui): Neuz's own drop box (a stack's count box, one item's Yes/No, a quest item's warning)
+  await page.locator('.hud-drop-window:visible').getByRole('button', { name: /^(Cancel|No)$/ }).click();
+  await expect(page.locator('.hud-drop-window:visible')).toHaveCount(0);
   // a tap on the item opens the tooltip again
   await bag.locator('[data-bag-slot="3"]').click();
   await expect(details).toBeVisible();
