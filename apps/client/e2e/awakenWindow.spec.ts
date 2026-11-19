@@ -1,6 +1,6 @@
 // custom (owner 2026-11-19): the Awaken window against the pretend world server (docs/superpowers/plans/2026-11-19-awaken-
 // window.md): from the Start menu, a suit and a Scroll of Awakening put in from the bag, the Yes/No box with "Don't ask
-// again", AWAKEN_WINDOW 0x8fff0102 sent, the World's answer (UPDATE_ITEM_EX, UPDATE_ITEM) drawn in the panel, and the next
+// again", AWAKEN_WINDOW 0x8fff0104 sent, the World's answer (UPDATE_ITEM_EX, UPDATE_ITEM) drawn in the panel, and the next
 // press sent at once.
 
 import { expect, test } from '@playwright/test';
@@ -13,7 +13,7 @@ import type { Gateway } from './worldHarness';
 test.describe.configure({ timeout: 120_000 });
 
 const COTTON_SUIT = 502, AWAKE = 26461, REVERSION = 26462;
-const AWAKEN_WINDOW = 0x8fff0102;
+const AWAKEN_WINDOW = 0x8fff0104;
 /** STR +20, Attack Speed +15%, Max. HP +250 (itemTooltip.test.ts). */
 const NEW_AWAKENING = 0x08cfa184b0041400n;
 const UI_NUM = 0, UI_RANDOMOPTITEMID = 10;

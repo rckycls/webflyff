@@ -46,7 +46,7 @@ export const PacketType = {
    * custom (owner 2026-11-19): the Awaken window's press (world/upgrade.ts `encodeAwakenWindow`). Not in V15: added by the
    * outer repo's patches/2026-11-19-awaken-window.patch (`PACKETTYPE_AWAKEN_WINDOW`, `CDPSrvr::OnAwakenWindow`).
    */
-  AWAKEN_WINDOW: 0x8fff0102,
+  AWAKEN_WINDOW: 0x8fff0104,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,

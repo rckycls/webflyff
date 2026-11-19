@@ -71,9 +71,9 @@ describe('the Upgrade Specialist\'s packets (2026-11-05)', () => {
   });
 
   it('AWAKEN_WINDOW: the item, the Scroll of Awakening, the Reversion or NULL_ID (custom 2026-11-19)', () => {
-    expect(PacketType.AWAKEN_WINDOW).toBe(0x8fff0102);
-    expect(words(encodeAwakenWindow(12, 3, 4))).toEqual([NULL_ID, 0x8fff0102, 12, 3, 4]);
-    expect(words(encodeAwakenWindow(12, 3, NULL_ID))).toEqual([NULL_ID, 0x8fff0102, 12, 3, NULL_ID]);
+    expect(PacketType.AWAKEN_WINDOW).toBe(0x8fff0104);
+    expect(words(encodeAwakenWindow(12, 3, 4))).toEqual([NULL_ID, 0x8fff0104, 12, 3, 4]);
+    expect(words(encodeAwakenWindow(12, 3, NULL_ID))).toEqual([NULL_ID, 0x8fff0104, 12, 3, NULL_ID]);
     expect(() => encodeAwakenWindow(NULL_ID, 3, 4)).toThrow();
     expect(() => encodeAwakenWindow(12, NULL_ID, 4)).toThrow();
   });

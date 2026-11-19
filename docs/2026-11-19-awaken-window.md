@@ -22,7 +22,7 @@ and two buttons of Awaken and Cancel". Design: `docs/superpowers/specs/2026-11-1
 
 ## For the build
 
-- New packet `AWAKEN_WINDOW` `0x8fff0102` (`encodeAwakenWindow`, `packages/protocol/src/world/upgrade.ts`).
+- New packet `AWAKEN_WINDOW` `0x8fff0104` (`encodeAwakenWindow`, `packages/protocol/src/world/upgrade.ts`).
 - `apps/client/src/world/items/awakenWindow.ts`, layouts `AWAKEN` / `AWAKEN_CONFIRM` in `itemWindowLayouts.ts`.
 - Start menu: applet `9004` (`AppId.AWAKEN`), the top level's 19th line (`MENU_MAX_LINES`): the next new window must go in
   a folder.
