@@ -102,10 +102,14 @@ test('top-right shortcuts: the important Start-menu icons in two rows of five on
       await expect(page.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
     }
     await page.getByRole('menu').screenshot({ path: info.outputPath('start-menu-desktop.png') });
-    // 2026-11-19 (custom): the Pet Filter's line, with its own icon, is in the Extras folder
+    // 2026-11-19 (custom): the Pet Filter's, the Awaken window's and the Teleport window's lines are in the Extras folder;
+    // 2026-11-20 (owner): each with its own icon
     await page.getByRole('menuitem', { name: 'Extras', exact: true }).click();
-    await expect(page.getByRole('menu', { name: 'Extras' }).getByRole('menuitem', { name: 'Pet Filter' }).locator('.hud-menu-icon'))
-      .toHaveCSS('background-image', /\/icons\/icon_petfilter\.png/);
+    const extras = page.getByRole('menu', { name: 'Extras' });
+    for (const [name, file] of [['Pet Filter', 'icon_petfilter'], ['Awaken', 'icon_awaken'], ['Teleport', 'icon_teleport']] as const) {
+      await expect(extras.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
+    }
+    await extras.screenshot({ path: info.outputPath('start-menu-extras-desktop.png') });
     await page.getByRole('menuitem', { name: 'Siege Ranking' }).click();
     await expect(page.locator('.hud-sr')).toBeVisible();
     await page.screenshot({ path: info.outputPath('top-desktop.png'), clip: top });
