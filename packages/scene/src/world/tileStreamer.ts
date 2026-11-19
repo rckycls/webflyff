@@ -19,7 +19,8 @@
 // overlay (global constraints: missing tile -> flat ground, never a hole).
 //
 // Each tile's objects go to the object pool (objects.ts) and, where there are some, to the collision shapes
-// (collision.ts), and are taken back from both when the tile goes.
+// (collision.ts), and are taken back from both when the tile goes. Its water and cloud sea (water.ts, 2026-11-19) come
+// and go with its ground, without being waited for.
 
 import type { Vec3, WebTile, WorldManifest } from '@flyffweb/formats';
 import { MAP_SIZE } from '@flyffweb/formats';
@@ -33,6 +34,7 @@ import type { TerrainLighting } from './TerrainTile';
 import type { CollisionShapes } from './collision';
 import { sampleHeight } from './heightSampler';
 import type { ObjectPool } from './objects';
+import type { WaterSurfaces, WaterTile } from './water';
 
 export interface TilePosition {
   x: number;
@@ -83,6 +85,8 @@ export interface StreamerDeps {
   overlay: Pick<Overlay, 'error' | 'addGpuBytes'>;
   /** Shared by every tile; each tile is unlit without it. */
   lighting?: TerrainLighting;
+  /** 2026-11-19: gives each tile its water and cloud sea (water.ts); no water is drawn without it. */
+  water?: Pick<WaterSurfaces, 'tile'>;
   /** Visible tiles around the player's: 1 (the default) is 3 x 3. */
   radius?: number;
   /**
@@ -103,6 +107,8 @@ interface Entry {
    */
   data: TileData | null;
   terrain: TerrainTile | null;
+  /** The tile's water, where it has some. Not waited for: `loaded` and `settled` are about the ground. */
+  water: WaterTile | null;
   placeholder: Mesh | null;
   objects: Group | null;
   /** The ground is on screen: the terrain's textures are in, or the tile is flat ground. */
@@ -239,10 +245,14 @@ export class TileStreamer {
     });
   }
 
-  /** The tile's ground, objects and placeholder are in the scene while it is visible, and out of it otherwise. */
+  /**
+   * The tile's ground, objects and placeholder are in the scene while it is visible, and out of it otherwise. Its water
+   * comes in once the ground is on screen, so it never floats over a tile still waiting for its textures.
+   */
   private place(entry: Entry): void {
     const shown = this.visible.includes(entry.key);
-    for (const object of [entry.terrain?.group, entry.objects, entry.placeholder]) {
+    const water = entry.loaded ? entry.water?.group : undefined;
+    for (const object of [entry.terrain?.group, water, entry.objects, entry.placeholder]) {
       if (object === undefined || object === null) continue;
       if (shown && object.parent !== this.scene) this.scene.add(object);
       else if (!shown && object.parent === this.scene) this.scene.remove(object);
@@ -255,6 +265,7 @@ export class TileStreamer {
       key,
       data: null,
       terrain: null,
+      water: null,
       placeholder: null,
       objects: null,
       loaded: false,
@@ -285,13 +296,21 @@ export class TileStreamer {
     entry.data = data;
     const terrain = new TerrainTile(tile, this.manifest, { textures: this.deps.textures, lighting: this.deps.lighting });
     entry.terrain = terrain;
-    entry.bytes = terrain.gpuBytes();
+    const water = this.deps.water?.tile(tile, this.manifest) ?? null;
+    entry.water = water;
+    entry.bytes = terrain.gpuBytes() + (water?.gpuBytes() ?? 0);
     this.deps.overlay.addGpuBytes(entry.bytes);
     this.place(entry);
+    if (water !== null) {
+      void water.ready.then(() => {
+        if (!entry.unloaded) this.prepareOutOfView(entry, water.group);
+      });
+    }
 
     const ground = terrain.ready.then(() => {
       if (entry.unloaded) return;
       entry.loaded = true;
+      if (water !== null) this.place(entry);
       this.prepareOutOfView(entry, terrain.group);
     });
     const objects = this.deps.objects.place(tile, this.manifest).then((group) => {
@@ -338,10 +357,15 @@ export class TileStreamer {
       this.deps.objects.releaseTile(entry.key);
       this.deps.shapes?.releaseTile(entry.key);
     }
+    if (entry.water !== null) {
+      this.scene.remove(entry.water.group);
+      entry.water.dispose();
+    }
     if (entry.objects !== null) this.scene.remove(entry.objects);
     if (entry.placeholder !== null) this.scene.remove(entry.placeholder);
     this.deps.overlay.addGpuBytes(-entry.bytes);
     entry.terrain = null;
+    entry.water = null;
     entry.objects = null;
     entry.placeholder = null;
     entry.data = null;

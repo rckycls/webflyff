@@ -17,6 +17,7 @@
 //   data/pets.json         (optional, 2026-11-09) the raised pets' table of pet.inc (WebPets)
 //   data/honorNeeds.json   (optional, 2026-11-11) honour id to the count that earns the title, of honorList.txt (WebHonorNeeds)
 //   data/ctrls.json        (optional, 2026-11-15) every OT_CTRL of mdlDyna.inc with a converted model: its model and scale (WebCtrl[])
+//   data/terrainWater.json (optional, 2026-11-19) Terrain.inc's water lists and cloud sea texture (WebTerrainWater, terrainWaterCatalog.ts)
 //
 // It runs after the models stage, and after the effects and UI stages whose files the effects index and the item icons
 // name (`effects/<web name>.json`, `ui/item/<web name>.png`, the keys of output/keys.ts; this stage does not check that
@@ -44,6 +45,7 @@ import {
   PETS_KEY,
   QUESTS_KEY,
   QUEST_FILES,
+  TERRAIN_WATER_KEY,
   WORLD_MAP_KEY,
   WORLD_NO_FLY_KEY,
   decodeScript,
@@ -99,6 +101,7 @@ import type { ModelIndex } from './modelIndexes';
 import { buildAudio } from './audioCatalog';
 import { buildSkills } from './skillsCatalog';
 import { TROUPE_SKILL_FILE, buildParty } from './partyCatalog';
+import { TERRAIN_FILE, buildTerrainWater } from './terrainWaterCatalog';
 import { WORLD_MAP_CNT, buildWorldMap } from './worldMapCatalog';
 
 const KIND = 'data';
@@ -854,6 +857,23 @@ export const gameDataStage: Stage = {
         ctx.report.ok(KIND, TROUPE_SKILL_FILE, read.bytes, bytes.length);
       } catch (error) {
         ctx.report.fail(KIND, error instanceof FormatError ? error.file : TROUPE_SKILL_FILE, error);
+      }
+    }
+
+    // The water catalog (2026-11-19), optional in the same way: without Terrain.inc there is none, and the client draws
+    // no water (TERRAIN_WATER_KEY is not one of GAME_DATA_KEYS).
+    if (ctx.client.packs.has(TERRAIN_FILE)) {
+      try {
+        const read = new Reading(ctx.client);
+        const water = buildTerrainWater(read.text(TERRAIN_FILE), env.defines, {
+          converted: (key) => ctx.writer.pathOf(key) !== undefined,
+          warn: (source, message) => ctx.report.warn(KIND, source, message),
+        });
+        const bytes = new TextEncoder().encode(JSON.stringify(water));
+        await ctx.writer.write(TERRAIN_WATER_KEY, bytes, TERRAIN_FILE);
+        ctx.report.ok(KIND, TERRAIN_FILE, read.bytes, bytes.length);
+      } catch (error) {
+        ctx.report.fail(KIND, error instanceof FormatError ? error.file : TERRAIN_FILE, error);
       }
     }
 

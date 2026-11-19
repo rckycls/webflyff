@@ -30,7 +30,8 @@ export interface EffectModelPart {
  * - **Blending:** GLOW is `SRCBLEND SRCALPHA`, `DESTBLEND ONE` (additive), BLEND is `SRCALPHA`, `INVSRCALPHA`
  *   (`:2445`, `:396-407`). Depth test on, depth write off (`:2446,2454,2481,2493`), no culling (`:2437`): so the
  *   meshes are double sided, and a quad or cone seen from behind is drawn like one seen from the front.
- * - **Order:** after everything opaque and after the other transparent things (renderOrder 0: water), and before the
+ * - **Order:** after everything opaque and after the other transparent things (renderOrder 0; the water and cloud sea,
+ *   world/water.ts, 0.25 to 0.27), and before the
  *   name tags and the move mark (renderOrder 1, drawn over everything). Effects are sorted far to near by their
  *   distance to the camera on the ground (`ObjSortFarToNear`, `World3D.cpp:327-363`, called at `:1179`; the height
  *   counts for nothing), and each effect's parts keep file order (`:2448`, no sorting of parts).
@@ -43,7 +44,7 @@ export interface EffectModelPart {
  * the screen and the next `draw`s reuse them.
  */
 
-/** Where the effects sit among the transparent things: between the water (0) and the name tags (1). */
+/** Where the effects sit among the transparent things: between the water (0.25 to 0.27) and the name tags (1). */
 const RENDER_ORDER_BASE = 0.5;
 /** One mesh further on; 10000 meshes in a frame still sort before 1. */
 const RENDER_ORDER_STEP = 0.00005;

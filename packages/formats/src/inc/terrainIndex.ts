@@ -27,8 +27,11 @@ const CPP_REF = 'Source/_Common/TerrainMng.cpp:75 CTerrainMng::LoadScript';
 
 /**
  * Reads the text of `Terrain.inc` (see `decodeScript`). Returns every texture by id (a later entry with the same
- * id replaces an earlier one, as `m_aTerrain[i]` is overwritten) and `waterFrames`, the count on the `water`
- * folder header (0 when no folder has one). The block flag and sound file of each entry are read and dropped.
+ * id replaces an earlier one, as `m_aTerrain[i]` is overwritten), `waterFrames`, the count on the `water`
+ * folder header (0 when no folder has one), and `waterLists`, the ids of each water list in file order: list i is
+ * `m_pWaterIndexList[i].pList` (TerrainMng.cpp:121-169), the frames of the water a patch's `byWaterTexture >> 2` names
+ * (lod.cpp:427). A list whose header count is 0 is no list, as the C++ makes none for it. The block flag and sound
+ * file of each entry are read and dropped.
  *
  * The C++ reads this file with CScanner, which has no defines; `defines` only lets an id or count be written as a
  * define name. A water list that holds a different number of entries than its header says throws.
@@ -37,16 +40,18 @@ export function readTerrainIndex(
   text: string,
   defines: ReadonlyMap<string, number>,
   file = 'Terrain.inc',
-): { waterFrames: number; textures: Map<number, TerrainTexture> } {
+): { waterFrames: number; waterLists: number[][]; textures: Map<number, TerrainTexture> } {
   const ts = new TokenStream(tokenize(text, file), defines, file);
   const textures = new Map<number, TerrainTexture>();
+  const waterLists: number[][] = [];
   let waterFrames = 0;
 
   const fail = (message: string, line: number, offset: number): never => {
     throw new FormatError(message, { file, offset, unit: 'char', line, reader: READER, cppRef: CPP_REF });
   };
 
-  const entry = (): void => {
+  /** Reads one entry; returns its id. */
+  const entry = (): number => {
     const id = ts.number();
     const frames = ts.number();
     const texture: TerrainTexture = { id, file: ts.string() };
@@ -54,15 +59,16 @@ export function readTerrainIndex(
     ts.number(); // block flag (TERRAIN::m_bBlock)
     ts.string(); // sound file
     textures.set(id, texture);
+    return id;
   };
 
   /**
    * Reads entries and headers up to the `}` that closes the block, or up to the end of the script at depth 1
    * (the whole file). Depth 2 is the inside of a folder, depth 3 the inside of a water list.
-   * Returns how many entries sit directly in this block.
+   * Returns the ids of the entries that sit directly in this block.
    */
-  const block = (depth: 1 | 2 | 3): number => {
-    let entries = 0;
+  const block = (depth: 1 | 2 | 3): number[] => {
+    const entries: number[] = [];
     while (depth === 1 ? !ts.done() : !ts.accept('}')) {
       const head = ts.peek();
       if (head === undefined) {
@@ -70,8 +76,7 @@ export function readTerrainIndex(
         break;
       }
       if (head.kind !== 'string') {
-        entry();
-        entries++;
+        entries.push(entry());
         continue;
       }
 
@@ -83,15 +88,16 @@ export function readTerrainIndex(
         if (count !== 0) waterFrames = count;
         block(2);
       } else {
-        const read = block(3);
-        if (count !== 0 && read !== count) {
-          fail(`water list "${name}" has ${read} textures, its header says ${count}`, head.line, head.offset);
+        const ids = block(3);
+        if (count !== 0 && ids.length !== count) {
+          fail(`water list "${name}" has ${ids.length} textures, its header says ${count}`, head.line, head.offset);
         }
+        if (count !== 0) waterLists.push(ids);
       }
     }
     return entries;
   };
 
   block(1);
-  return { waterFrames, textures };
+  return { waterFrames, waterLists, textures };
 }

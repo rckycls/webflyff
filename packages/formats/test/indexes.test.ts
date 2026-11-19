@@ -243,6 +243,15 @@ describe('readTerrainIndex', () => {
     expect(readTerrainIndex(script('"rock" 0', '{', '  3 0 "r.dds" 0 ""', '}'), new Map()).waterFrames).toBe(0);
   });
 
+  it('lists the ids of each water list in file order, as m_pWaterIndexList[i].pList (TerrainMng.cpp:121-169)', () => {
+    // the entry after the lists (11) is a texture of the water folder, not a frame of a list
+    expect(readTerrainIndex(TERRAIN, new Map()).waterLists).toEqual([
+      [20, 21, 22],
+      [30, 31],
+    ]);
+    expect(readTerrainIndex(script('"rock" 0', '{', '  3 0 "r.dds" 0 ""', '}'), new Map()).waterLists).toEqual([]);
+  });
+
   it('keeps a non-zero count on an entry as frames', () => {
     const text = script('"x" 0', '{', '  7 3 "w.dds" 0 ""', '  8 0 "v.dds" 0 ""', '}');
     const { textures } = readTerrainIndex(text, new Map());

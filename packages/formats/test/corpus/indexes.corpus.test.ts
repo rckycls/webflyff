@@ -127,6 +127,7 @@ describeClient('world header, terrain index and model index', () => {
     // what the C++ keeps and TerrainTexture drops: the shipped file sets no block flag and names no sound
     expect([...cpp.terrain.values()].filter((t) => t.block !== 0 || t.sound !== '')).toEqual([]);
     expect(cpp.waterLists.map((ids) => ids.length)).toEqual([54, 54]); // the two animated water textures
+    expect(mine.waterLists).toEqual(cpp.waterLists);
   });
 
   // mdlObj.inc is UTF-16LE, mdlDyna.inc is CP949.

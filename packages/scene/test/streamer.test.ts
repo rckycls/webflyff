@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TerrainTile } from '../src/world/TerrainTile';
 import { TileStreamer, tileOf, tilesInRange } from '../src/world/tileStreamer';
 import type { TileData } from '../src/world/tileStreamer';
+import type { WaterSurfaces } from '../src/world/water';
 
 const SIDE = MAP_SIZE + 1;
 const PATCHES = NUM_PATCHES_PER_SIDE * NUM_PATCHES_PER_SIDE;
@@ -80,9 +81,10 @@ interface Setup {
   tile?: (x: number, y: number) => WebTile;
   /** `startPreloading` is called before the first update (the default), as the world calls it once it is on screen. */
   preload?: boolean;
+  water?: Pick<WaterSurfaces, 'tile'>;
 }
 
-function setup({ missing = [], failing = [], held = [], instantTextures = true, tile = makeTile, preload = true }: Setup = {}) {
+function setup({ missing = [], failing = [], held = [], instantTextures = true, tile = makeTile, preload = true, water }: Setup = {}) {
   const heldDownloads = new Map<string, () => void>();
   const store = {
     tile: vi.fn(async (_world: string, x: number, y: number): Promise<WebTile | null> => {
@@ -107,7 +109,7 @@ function setup({ missing = [], failing = [], held = [], instantTextures = true, 
   const textures = fakeTextures(instantTextures);
   const scene = new Scene();
   const prepare = vi.fn((_object: Object3D) => {});
-  const streamer = new TileStreamer('wdtest', makeManifest(), store, scene, { textures, objects, shapes, overlay, prepare });
+  const streamer = new TileStreamer('wdtest', makeManifest(), store, scene, { textures, objects, shapes, overlay, prepare, water });
   if (preload) streamer.startPreloading();
   const gpuBytes = () => overlay.addGpuBytes.mock.calls.reduce((sum, [n]) => sum + n, 0);
   const release = (key: string) => heldDownloads.get(key)?.();
@@ -350,6 +352,34 @@ describe('TileStreamer', () => {
     expect(new Set(shapes.releaseTile.mock.calls.map(([key]) => key))).toEqual(
       new Set([8, 9, 10].flatMap((x) => [8, 9, 10, 11, 12].map((y) => `${x}_${y}`))),
     );
+  });
+
+  it("puts a tile's water in once its ground is on screen, and takes it out and disposes it with the tile", async () => {
+    const tiles = new Map<string, { group: Group; ready: Promise<void>; gpuBytes: () => number; dispose: () => void }>();
+    const water = {
+      tile: vi.fn((t: WebTile) => {
+        const fake = { group: new Group(), ready: Promise.resolve(), gpuBytes: () => 100, dispose: vi.fn() };
+        tiles.set(`${t.x}_${t.y}`, fake);
+        return fake as never;
+      }),
+    };
+    const { scene, streamer, textures, gpuBytes } = setup({ instantTextures: false, water });
+    streamer.update(middleOf(10, 10));
+    await flush();
+    const middle = tiles.get('10_10')!;
+    expect(middle.group.parent).toBeNull(); // the ground's textures are not in yet
+
+    textures.arrive();
+    await flush();
+    expect(middle.group.parent).toBe(scene);
+    expect(tiles.get('8_8')!.group.parent).toBeNull(); // a ring tile's water is not drawn
+
+    streamer.update(middleOf(20, 20));
+    await flush();
+    expect(middle.group.parent).toBeNull();
+    expect(middle.dispose).toHaveBeenCalledTimes(1);
+    streamer.dispose();
+    expect(gpuBytes()).toBe(0);
   });
 
   it('unloads what goes out of range: ground disposed, textures and objects given back, nothing asked twice', async () => {

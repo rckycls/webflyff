@@ -103,6 +103,16 @@ export type { WebUiSheet, WebUiSheets } from './web/ui';
 export type { ModelBoxExtras, SkeletonExtras, SkeletonGrips } from './web/modelExtras';
 export { CHAT_KEY, CTRLS_KEY, GAME_DATA_KEYS, HONOR_NEEDS_KEY, ITEM_ETC_KEY, PETS_KEY, ULTIMATE_KEY, WORLD_NO_FLY_KEY } from './web/gameData';
 export { textureExKey, textureExName } from './web/textureEx';
+export {
+  CLOUD_TERRAIN_ID,
+  MASK_WATERFRAME,
+  TERRAIN_WATER_KEY,
+  WTYPE_CLOUD,
+  WTYPE_NONE,
+  WTYPE_WATER,
+  waterOfPatch,
+} from './web/terrainWater';
+export type { WebTerrainWater } from './web/terrainWater';
 export type {
   WebChat,
   WebUltimate,
