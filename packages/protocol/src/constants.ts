@@ -42,6 +42,11 @@ export const PacketType = {
    * Loot tab's 0x8fff0100, which no client sends now.
    */
   PET_FILTER: 0x8fff0101,
+  /**
+   * custom (owner 2026-11-19): the Teleport window's place number (world/teleportWindow.ts). Not in V15: added by the outer
+   * repo's patches/2026-11-19-teleport-window.patch (`PACKETTYPE_TELEPORT_WINDOW`, `CDPSrvr::OnTeleportWindow`).
+   */
+  TELEPORT_WINDOW: 0x8fff0120,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,

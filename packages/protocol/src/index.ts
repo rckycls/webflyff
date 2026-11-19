@@ -91,3 +91,4 @@ export * from './world/hpLayer';
 export * from './world/tax'; // 2026-11-15
 export * from './world/guildCombat'; // 2026-11-15: the Guild Siege
 export * from './world/authority'; // 2026-11-17: the authority letters, VIP1-VIP4 (vip-auth)
+export * from './world/teleportWindow'; // custom (owner 2026-11-19): the Teleport window
