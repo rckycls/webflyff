@@ -8,6 +8,11 @@ async function statusAnswers(page: Page, body: unknown): Promise<void> {
   await page.route('**/api/status', (route) => route.fulfill({ json: body }));
 }
 
+const DISCORD = { url: 'https://discord.gg/abc', name: 'OSFlyff', online: 42, members: 310 };
+async function discordAnswers(page: Page, status: number, body: unknown): Promise<void> {
+  await page.route('**/api/discord', (route) => route.fulfill({ status, json: body }));
+}
+
 test('shows the online count, the news and the links', async ({ page }) => {
   await statusAnswers(page, { online: true, players: 3, checkedAt: '2026-11-11T00:00:00.000Z' });
   await page.goto('/');
@@ -60,8 +65,10 @@ test.describe('portrait phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   test('shows the page, not the turn-your-phone cover', async ({ page }) => {
     await statusAnswers(page, { online: true, players: 1, checkedAt: '2026-11-11T00:00:00.000Z' });
+    await discordAnswers(page, 200, DISCORD);
     await page.goto('/');
     await expect(page.getByRole('link', { name: 'Play', exact: true })).toBeVisible();
+    await expect(page.getByText('42 online · 310 members')).toBeVisible();
     await expect(page.getByText('Turn your device sideways')).toHaveCount(0);
     await expect(page.getByRole('status')).toHaveText('Online · 1 player');
     const problems = await page.evaluate(() => {
@@ -75,4 +82,41 @@ test.describe('portrait phone', () => {
     });
     expect(problems).toEqual([]);
   });
+});
+
+// The Discord button (docs/superpowers/specs/2026-11-20-discord-box-design.md): from /api/discord, on the first screen.
+test('shows the Discord button with the live numbers', async ({ page }) => {
+  await statusAnswers(page, { online: true, players: 3, checkedAt: '2026-11-11T00:00:00.000Z' });
+  await discordAnswers(page, 200, DISCORD);
+  await page.goto('/');
+  const button = page.getByRole('link', { name: /Join our Discord/ });
+  await expect(button).toHaveAttribute('href', 'https://discord.gg/abc');
+  await expect(button).toHaveAttribute('target', '_blank');
+  await expect(button).toHaveAttribute('rel', /noopener/);
+  await expect(button).toContainText('42 online · 310 members');
+  const box = (await button.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  // Play still stands out
+  const play = (await page.getByRole('link', { name: 'Play', exact: true }).boundingBox())!;
+  expect(play.width * play.height).toBeGreaterThan(box.width * box.height);
+});
+
+test('shows the button without numbers when Discord gave none', async ({ page }) => {
+  await statusAnswers(page, { online: true, players: 3, checkedAt: '2026-11-11T00:00:00.000Z' });
+  await discordAnswers(page, 200, { ...DISCORD, online: null, members: null });
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: /Join our Discord/ })).toHaveText('Join our Discord');
+});
+
+test('shows no Discord button when it is off or the answer is bad', async ({ page }) => {
+  await statusAnswers(page, { online: true, players: 3, checkedAt: '2026-11-11T00:00:00.000Z' });
+  await discordAnswers(page, 404, { error: 'off' });
+  await page.goto('/');
+  await expect(page.getByRole('status')).toHaveText('Online · 3 players');
+  await expect(page.getByRole('link', { name: /Discord/ })).toHaveCount(0);
+  await page.unroute('**/api/discord');
+  await discordAnswers(page, 200, { ...DISCORD, url: 'https://evil.example/x' });
+  await page.reload();
+  await expect(page.getByRole('status')).toHaveText('Online · 3 players');
+  await expect(page.getByRole('link', { name: /Discord/ })).toHaveCount(0);
 });
