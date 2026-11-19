@@ -202,6 +202,7 @@ import { ticketInUse } from './items/itemWindows';
 import { PiercingWindow, SmeltSafetyWindow } from './items/upgradeNpcWindows';
 import { JewelWindows } from './items/jewelWindows';
 import { ItemNpcWindows } from './items/itemNpcWindows';
+import { AmountBox } from './hud/amountBox'; // custom (owner 2026-11-19): the Craft Card's "Repeat how many times?"
 import type { NpcWindowPacket } from './items/npcWindowKit';
 // 2026-11-10: Summon Angel (docs/superpowers/specs/2026-11-10-summon-angel-research.md)
 import { SummonAngelWindow } from './angel/summonAngelWindow';
@@ -587,6 +588,8 @@ export class WorldScreen {
   private jewels: JewelWindows | undefined;
   /** 2026-11-11: the rest of the jewel and safe upgrade menus, the Repair window and the GM's ResistItem window. */
   private itemNpc: ItemNpcWindows | undefined;
+  /** custom (owner 2026-11-19): the Craft Card's bulk number box, made at its first use. */
+  private craftTries: AmountBox | undefined;
   /**
    * 2026-11-10: Summon Angel: the Priest of Confession's window, the angels following their players and their models and
    * gauges, the own angel's EXP and level (`m_nAngelExp`, `m_nAngelLevel`), the 100% box's latch (`m_bAngelFinish`) and
@@ -1262,6 +1265,8 @@ export class WorldScreen {
       if (value.type === 'ultimate') { this.jewels?.onUltimate(value); this.itemNpc?.onUltimate(value); continue; }
       // 2026-11-11: Remove Element upgrading's answer (OnRemoveAttributeResult, DPClient.cpp:6415-6423)
       if (value.type === 'removeAttribute') { this.itemNpc?.removeAttribute.onResult(value.success); continue; }
+      // custom (owner 2026-11-19): Bozman's Craft Card's answer (SNAPSHOTTYPE_CRAFT_CARD, the World's patch)
+      if (value.type === 'craftCard') { if (objectId === self?.objectId) this.itemNpc?.craftCard.onResult(value); continue; }
       // 2026-11-10: the angel's EXP, and "Your Angel has reached full Exp." (OnAngelInfo, DPClient.cpp:11337-11354); the local
       // events, EVE_PK's among them (OnFlyffEvent, OnSetLocalEvent, :6183-6199, :6260-6265)
       if (value.type === 'angel') {
@@ -1958,6 +1963,24 @@ export class WorldScreen {
             : this.beautyShop?.hair.isOpen === true ? 'TID_GAME_REPAIR_TAKEBEAUTY'
             : this.summonAngel?.isOpen === true ? 'TID_GAME_SUMMONANGELUSING'
               : this.personalShop?.blocksWorld === true ? 'TID_GAME_REPAIR_TRADEING' : null,
+      // custom (owner 2026-11-19): Bozman's Craft Card: the own letter (its VIP tries), its own chat lines, its Yes/No box
+      // and its "Repeat how many times?" box (the bank's number box: typed on a desktop, the pad on a phone)
+      craft: {
+        authorization: () => this.world?.self()?.added.player?.authorization ?? 0,
+        sayText: (text) => this.hud?.messages.add(text, 0xffffffff),
+        confirm: (text, yes) => this.messageBox?.open(text, 'okCancel', yes),
+        askTries: (max, chosen) => {
+          const layer = this.hud?.element;
+          if (layer === undefined) return;
+          this.craftTries ??= new AmountBox(this.hudArt!, doc);
+          const box = this.craftTries;
+          if (box.isOpen) return;
+          if (box.element.parentElement !== layer) layer.append(box.element);
+          box.onOk = (tries) => chosen(tries);
+          box.onClose = () => {};
+          box.open('Craft Card', 'Repeat how many times?', 'Times:', max, 2, max);
+        },
+      },
     });
     // 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts)
     this.summonAngel = new SummonAngelWindow({
@@ -5744,6 +5767,9 @@ this.follow(world, stage);
       const mode = entry === MMI.SMELT_SAFETY_GENERAL ? 'normal' : entry === MMI.SMELT_SAFETY_ACCESSORY ? 'accessory'
         : entry === MMI.SMELT_SAFETY_PIERCING ? 'piercing' : 'element';
       this.upgradeNpc?.safety.open(mode);
+    } else if (entry === MMI.CRAFT_CARD) {
+      // custom (owner 2026-11-19): Bozman's Craft Card; as Piercing, nothing while a shop or a beauty window is open
+      if (this.shopWindow?.frame.isOpen !== true && this.beautyShop?.isOpen !== true) this.itemNpc?.craftCard.openAt(id);
     } else if (entry === MMI.SMELT_MIXJEWEL) {
       this.itemNpc?.jewels.mix.open(); // 2026-11-11: Create Shining Oricalkum (:4942-4957)
     } else if (entry === MMI.SMELT_CHANGEGWEAPON || entry === MMI.SMELT_CHANGEUWEAPON) {
@@ -6200,6 +6226,8 @@ this.follow(world, stage);
     this.jewels = undefined;
     this.itemNpc?.close();
     this.itemNpc = undefined;
+    this.craftTries?.close();
+    this.craftTries = undefined;
     // 2026-11-10: Summon Angel
     this.summonAngel?.close();
     this.summonAngel = undefined;

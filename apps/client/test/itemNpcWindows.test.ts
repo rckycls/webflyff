@@ -22,6 +22,9 @@ const PROPS = new Map<number, WebItemProp>([
   [2040, itemProp({ id: 2040, kind2: 17, kind3: 102, name: 'Ruby (HP)', icon: 'items/ruby01.png' })],
   [2045, itemProp({ id: 2045, kind2: 17, kind3: 102, name: 'Ruby (ATK)', icon: 'items/ruby02.png' })],
   [2800, itemProp({ id: 2800, kind1: 4, kind2: 14, kind3: 0, part: -1, name: 'Potion', icon: 'items/potion.png' })],
+  // custom (owner 2026-11-19): the Craft Stone and a 4% suit card
+  [20280, itemProp({ id: 20280, kind2: 17, kind3: 39, name: 'Craft Stone', icon: 'items/stone.png' })],
+  [3207, itemProp({ id: 3207, kind2: 17, kind3: 62, name: 'Volcano Card(4%)', icon: 'items/magma.png' })],
 ]);
 const ULTIMATE: WebUltimate = {
   abilities: [{ dst: 35, jewels: [{ jewel: 2032, ability: 2040, values: [1] }] }, { dst: 83, jewels: [{ jewel: 2032, ability: 2045, values: [1] }] }],
@@ -66,6 +69,8 @@ function rig(mobile = false) {
   let busy: string | null = null;
   const windows = new ItemNpcWindows(host, {
     cards: () => new Map([[9001, [{ dst: 1, adj: 3 }]]]), repairBusy: () => busy,
+    // custom (owner 2026-11-19): Bozman's Craft Card's own host parts
+    craft: { authorization: () => 0x46, sayText: () => {}, confirm: (_text, yes) => yes(), askTries: () => {} },
   });
   return { own, host, reserved, said, alerts, sent, layer, windows, bagOpened: () => bagOpened, die: () => die, setBusy: (tid: string | null) => { busy = tid; } };
 }
@@ -309,6 +314,27 @@ describe('the GM ResistItem window (CWndUpgradeBase, APP_TEST)', () => {
     expect(r.reserved.get(3)).toBe(1);
     r.windows.bagClosed();
     expect(resist.isOpen).toBe(false);
+    expect(r.reserved.size).toBe(0);
+  });
+});
+
+describe('custom (owner 2026-11-19): the Craft Card among the item NPC windows', () => {
+  it('opens for Bozman, gets the bag presses, sends through the host, and closes with the others', () => {
+    const r = rig();
+    r.own.inventory!.set(20, { objectId: 20, itemId: 20280, count: 3 });
+    r.own.inventory!.set(21, { objectId: 21, itemId: 3207, count: 2 });
+    const craft = r.windows.craftCard;
+    expect(craft.openAt(0x3001)).toBe(true);
+    expect(r.windows.isOpen).toBe(true);
+    expect(r.windows.take(12)).toBe('refused'); // a potion
+    expect(r.windows.take(20)).toBe('taken');
+    expect(r.windows.tapItem(21)).toBe('taken');
+    expect(craft.state.stone).toBe(20);
+    expect(craft.state.cards[0]).toBe(21);
+    r.layer.querySelector<HTMLButtonElement>('.hud-craft-card [data-craft="craft"]')!.click();
+    expect(r.sent).toEqual([{ type: 'craftCard', npcId: 0x3001, stoneId: 20, cardIds: [21], tries: 1, stopOnSuccess: false }]);
+    r.windows.dismiss(); // the player moved
+    expect(craft.isOpen).toBe(false);
     expect(r.reserved.size).toBe(0);
   });
 });
