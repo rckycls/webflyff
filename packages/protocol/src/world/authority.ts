@@ -33,9 +33,12 @@ export const AUTHORITY_TITLES: Readonly<Record<AuthorityLetter, string>> = Objec
   O: 'Operator', P: 'Admin', A: 'VIP 1', B: 'VIP 2', C: 'VIP 3', E: 'VIP 4',
 });
 
-/** The letters the admin panel can give an account or a character, in the order it lists them. */
+/**
+ * The letters the admin panel can give an account or a character, in the order it lists them. 2026-11-19 (VIP perks):
+ * no VIP letters any more: the website gives and takes them from the VIP list (the panel's VIP tab, Give VIP).
+ */
 export const SETTABLE_AUTHORITIES: readonly AuthorityLetter[] = Object.freeze([
-  Authority.GENERAL, Authority.VIP1, Authority.VIP2, Authority.VIP3, Authority.VIP4, Authority.HELPER,
+  Authority.GENERAL, Authority.HELPER,
   Authority.GAMEMASTER, Authority.GAMEMASTER2, Authority.GAMEMASTER3, Authority.OPERATOR, Authority.ADMINISTRATOR,
 ]);
 

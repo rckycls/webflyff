@@ -31,6 +31,7 @@ import {
   readSetPointParam, readSetState,
 } from './combat';
 import { readEnvironmentSetting } from './environment';
+import { readVipInventorySort, VIP_INVENTORY_SORT } from './vipBag'; // 2026-11-19 (VIP perks)
 import {
   readDestAngle, readDestPos, readMotion, readMoverAngle, readMoverBehavior, readMoverCorr, readMoverMoved,
   readSetDestObj,
@@ -87,6 +88,8 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.ADD_OBJ, readAddObj],
     // Server calculated display values: gear, awakenings, sets, sockets and buffs.
     [0x8871, r => ({ type: 'profileStats', values: Array.from({ length: 14 }, () => r.i32()) })],
+    // custom (owner 2026-11-19, VIP perks): the bag's new order after the VIP sort
+    [VIP_INVENTORY_SORT, readVipInventorySort],
     [0x0069, r => readSocial(r, 'party')],
     [0x004f, readGmChat],
     // 2026-11-10: SNAPSHOTTYPE_TEXT with its state byte (it was read as an announcement without it, and lost)

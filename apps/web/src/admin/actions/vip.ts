@@ -164,6 +164,70 @@ const qrDelete = withVip(async (body, ctx, deps, vip) => {
   });
 });
 
+// --- 2026-11-19 (VIP perks): Give VIP, the gift box contents and the gift log ------------------------------------------
+
+/** The most days Give VIP gives at once, and the most rows the gift log shows. */
+const MAX_GIVE_DAYS = 366;
+const GIFT_LOG_ROWS = 100;
+
+const give = withVip(async (body, ctx, deps, vip) => {
+  const account = textField(body, 'account', 32);
+  if (account === undefined) return invalid('account', 'Type the account name.');
+  const level = intField(body, 'level', 1, 4);
+  if (level === undefined) return invalid('level', 'The VIP level is 1 to 4.');
+  const days = intField(body, 'days', 1, MAX_GIVE_DAYS);
+  if (days === undefined) return invalid('days', `The number of days is 1 to ${MAX_GIVE_DAYS}.`);
+  const gift = boolField(body, 'gift');
+  if (gift === undefined) return invalid('gift');
+  return runAudited(deps, ctx, { action: 'vip.give', account, before: { level, days, gift } }, async () => {
+    const done = await vip.store.give(account, level, days, gift, ctx.session.user);
+    if (done.result === 'ok') return { answer: okReply({ level: done.level, endsAt: done.endsAt }), result: 'ok', after: { level: done.level, endsAt: done.endsAt, gift } };
+    if (done.result === 'unknown') return { answer: reply(404, { error: 'not_found', message: 'There is no such account.' }), result: 'refused', after: { unknown: account } };
+    return { answer: invalid('level'), result: 'refused', after: { result: done.result } };
+  });
+});
+
+const giftItems = withVip(async (_body, _ctx, deps, vip) => {
+  const names = new Map(deps.catalog.map((item) => [item.id, item.name]));
+  return reply(200, { rows: (await vip.store.giftItems()).map((i) => ({ ...i, name: names.get(i.itemId) ?? null })) });
+});
+
+const giftItemSave = withVip(async (body, ctx, deps, vip) => {
+  const level = intField(body, 'level', 1, 4);
+  if (level === undefined) return invalid('level', 'The VIP level is 1 to 4.');
+  const slot = intField(body, 'slot', 1, 6);
+  if (slot === undefined) return invalid('slot', 'A box holds 6 item stacks: the slot is 1 to 6.');
+  const count = intField(body, 'count', 0, 9999);
+  if (count === undefined) return invalid('count', 'The count is 1 to 9999 (0 empties the slot).');
+  let itemId = 0;
+  if (count > 0) {
+    const id = intField(body, 'itemId', 1, 2_147_483_647);
+    const item = id === undefined ? undefined : deps.catalog.find((i) => i.id === id);
+    if (item === undefined) return invalid('itemId', 'Pick an item from the search.');
+    if (count > item.packMax) return invalid('count', `${item.name} stacks to ${item.packMax}: one slot holds at most that many.`);
+    itemId = item.id;
+  }
+  const before = (await vip.store.giftItems()).find((i) => i.level === level && i.slot === slot) ?? { level, slot, empty: true };
+  const after = { level, slot, itemId, count };
+  return runAudited(deps, ctx, { action: 'vip.giftItem', before }, async () => ((await vip.store.saveGiftItem(after))
+    ? { answer: okReply(), result: 'ok', after }
+    : { answer: invalid('slot'), result: 'refused', after }));
+});
+
+const giftLog = withVip(async (_body, _ctx, _deps, vip) => reply(200, { rows: await vip.store.giftLog(GIFT_LOG_ROWS) }));
+
+/** Ends an account's live VIP now (a wrongly approved payment, say): the star goes, and its unsent boxes are cancelled. */
+const end = withVip(async (body, ctx, deps, vip) => {
+  const account = textField(body, 'account', 32);
+  if (account === undefined) return invalid('account', 'Type the account name.');
+  return runAudited(deps, ctx, { action: 'vip.end', account, before: { account } }, async () => {
+    const done = await vip.store.endVip(account, ctx.session.user);
+    if (done.result === 'ok') return { answer: okReply({ cancelled: done.cancelled }), result: 'ok', after: { ended: true, cancelled: done.cancelled } };
+    if (done.result === 'unknown') return { answer: reply(404, { error: 'not_found', message: 'There is no such account.' }), result: 'refused', after: { unknown: account } };
+    return { answer: reply(409, { error: 'refused', message: 'This account has no VIP running now.' }), result: 'refused', after: { none: account } };
+  });
+});
+
 export const VIP_ACTIONS = {
   'vip.requests': requests,
   'vip.approve': approve,
@@ -174,4 +238,9 @@ export const VIP_ACTIONS = {
   'vip.qrAdd': qrAdd,
   'vip.qrSave': qrSave,
   'vip.qrDelete': qrDelete,
+  'vip.give': give,
+  'vip.giftItems': giftItems,
+  'vip.giftItemSave': giftItemSave,
+  'vip.giftLog': giftLog,
+  'vip.end': end,
 } satisfies Record<string, ActionHandler>;

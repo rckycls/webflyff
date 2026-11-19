@@ -193,3 +193,67 @@ it('takes a QR picture over 16 KB only in vip.qrAdd with a live session', async 
   // and in every other action
   expect((await call(port, 'POST', '/api/vip.qrSave', headers, body)).status).toBe(413);
 });
+
+// --- 2026-11-19 (VIP perks): Give VIP, the gift box contents and the gift log -----------------------------------------
+
+function perksSetUp() {
+  let deps: ReturnType<typeof testDeps>;
+  const vipStore = new MemoryVipStore([{ account: 'tester1', passwordHash: 'x' }], () => deps.now());
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'vip-admin-'));
+  dirs.push(dir);
+  const files = new VipFiles(dir);
+  deps = testDeps({
+    actions: VIP_ACTIONS,
+    catalog: [{ id: 10206, name: 'Remantis Laccotte', packMax: 99, upgradable: false }, { id: 2800, name: 'Lollipop', packMax: 9999, upgradable: false }],
+  });
+  deps.vip = { store: vipStore, files };
+  return { deps, vipStore, files, dir, ctx: testContext(deps) };
+}
+
+it('Give VIP: refuses a bad level, a bad number of days or an unknown account; gives, logged, with or without a box', async () => {
+  const s = perksSetUp();
+  expect(await act('vip.give', { account: 'tester1', level: 5, days: 30, gift: true }, s)).toMatchObject({ status: 400, body: { field: 'level' } });
+  expect(await act('vip.give', { account: 'tester1', level: 1, days: 0, gift: true }, s)).toMatchObject({ status: 400, body: { field: 'days' } });
+  expect(await act('vip.give', { account: 'tester1', level: 1, days: 30 }, s)).toMatchObject({ status: 400, body: { field: 'gift' } });
+  expect(await act('vip.give', { account: 'nobody', level: 1, days: 30, gift: true }, s)).toMatchObject({ status: 404 });
+  const given = await act('vip.give', { account: 'tester1', level: 2, days: 3, gift: false }, s);
+  expect(given).toMatchObject({ status: 200, body: { ok: true, level: 2 } });
+  expect(given.body.endsAt).toMatch(/Z$/);
+  expect(await s.vipStore.pendingGifts(10)).toEqual([]);
+  await act('vip.give', { account: 'tester1', level: 2, days: 30, gift: true }, s);
+  expect(await s.vipStore.pendingGifts(10)).toHaveLength(1);
+  // the unknown account's try is in the log too, refused
+  expect(s.deps.store.log.filter((r) => r.action === 'vip.give').map((r) => r.result)).toEqual(['refused', 'ok', 'ok']);
+});
+
+it('gift box contents: lists them; refuses an unknown item, a count over the stack, a bad slot; saves and empties, logged', async () => {
+  const s = perksSetUp();
+  const list = await act('vip.giftItems', {}, s);
+  expect(list.body.rows.filter((r: { level: number }) => r.level === 1)).toHaveLength(5);
+  expect(await act('vip.giftItemSave', { level: 1, slot: 6, itemId: 999999, count: 1 }, s)).toMatchObject({ status: 400, body: { field: 'itemId' } });
+  expect(await act('vip.giftItemSave', { level: 1, slot: 6, itemId: 10206, count: 100 }, s)).toMatchObject({ status: 400, body: { field: 'count' } });
+  expect(await act('vip.giftItemSave', { level: 1, slot: 7, itemId: 10206, count: 1 }, s)).toMatchObject({ status: 400, body: { field: 'slot' } });
+  expect(await act('vip.giftItemSave', { level: 1, slot: 6, itemId: 2800, count: 500 }, s)).toMatchObject({ status: 200, body: { ok: true } });
+  expect(await act('vip.giftItemSave', { level: 1, slot: 1, itemId: 0, count: 0 }, s)).toMatchObject({ status: 200 });
+  const after = (await act('vip.giftItems', {}, s)).body.rows.filter((r: { level: number }) => r.level === 1);
+  expect(after.map((r: { slot: number; name: string }) => [r.slot, r.name])).toEqual([[2, null], [3, null], [4, null], [5, null], [6, 'Lollipop']]);
+  expect(s.deps.store.log.filter((r) => r.action === 'vip.giftItem')).toHaveLength(2);
+});
+
+it('gift log: the latest boxes with the character they went to', async () => {
+  const s = perksSetUp();
+  await act('vip.give', { account: 'tester1', level: 1, days: 30, gift: true }, s);
+  const [gift] = await s.vipStore.pendingGifts(10);
+  await s.vipStore.markGiftSent(gift!.id, '0000002', 'Main', '10206x10');
+  const log = await act('vip.giftLog', {}, s);
+  expect(log.body.rows[0]).toMatchObject({ account: 'tester1', level: 1, characterName: 'Main', items: '10206x10' });
+});
+
+it('End VIP: refuses an unknown account, ends a live VIP now (logged), and says when there was none', async () => {
+  const s = perksSetUp();
+  expect(await act('vip.end', { account: 'nobody' }, s)).toMatchObject({ status: 404 });
+  await act('vip.give', { account: 'tester1', level: 1, days: 30, gift: true }, s);
+  expect(await act('vip.end', { account: 'tester1' }, s)).toMatchObject({ status: 200, body: { ok: true, cancelled: 1 } });
+  expect(await act('vip.end', { account: 'tester1' }, s)).toMatchObject({ status: 409 });
+  expect(s.deps.store.log.filter((r) => r.action === 'vip.end').map((r) => r.result)).toEqual(['refused', 'ok', 'refused']);
+});

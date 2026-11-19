@@ -1,10 +1,15 @@
 // The Support / VIP page's calls to the web service (apps/web/src/vip/siteVip.ts): the player's session, the page's
 // data, the login, and a request with its receipt. Every POST carries the session's CSRF token in X-Site-Token.
 
+import type { GiftStatus } from './vipPerks';
+
 /** USD for everyone; PHP (pesos) for players in the Philippines, on tiers that have a peso price. */
 export type Currency = 'USD' | 'PHP';
-/** `pricePhpCents`: the peso price in centavos, or `null` for US$ only. */
-export interface VipTier { level: number; name: string; priceCents: number; pricePhpCents: number | null }
+/**
+ * `pricePhpCents`: the peso price in centavos, or `null` for US$ only. 2026-11-19 (VIP perks): `autoPlayHours`, the
+ * tier's Auto Play hours a week (null: no limit).
+ */
+export interface VipTier { level: number; name: string; priceCents: number; pricePhpCents: number | null; autoPlayHours?: number | null }
 export interface PayQr { id: number; label: string; accountName: string; note: string; image: string }
 export type VipStatus = 'P' | 'A' | 'R';
 /** `priceCents` is in `currency`; `receipt` is `null` once a rejected request's picture was deleted. */
@@ -13,7 +18,8 @@ export interface MyRequest {
   reason: string | null; createdAt: string; decidedAt: string | null; vipEndsAt: string | null; receipt: string | null;
 }
 export interface VipNow { level: number; name: string | null; endsAt: string }
-export interface Me { account: string; vip: VipNow | null; requests: MyRequest[] }
+/** 2026-11-19 (VIP perks): `gift`, the latest gift box (vipPerks.ts GiftStatus). */
+export interface Me { account: string; vip: VipNow | null; requests: MyRequest[]; gift?: GiftStatus | null }
 export interface VipPageData { tiers: VipTier[]; qrs: PayQr[]; maxPending: number; me?: Me }
 
 export type VipError =

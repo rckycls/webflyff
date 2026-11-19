@@ -102,17 +102,21 @@ ELSE
 	PRINT 'FAIL 9: the character list''s pages or total are wrong'
 DROP TABLE #cpage
 
--- 10. Authority letters: a VIP letter is taken (0 rows: no such account or character), a lower-case or unknown one is
--- refused (-1). Nothing is changed: 'nobody-check' and 'x-check' cannot be names or ids.
+-- 10. Authority letters: a panel letter is taken (0 rows: no such account or character); a VIP letter (2026-11-19: the
+-- website gives those, from the VIP list), a lower-case or an unknown one is refused (-1). Nothing is changed:
+-- 'nobody-check' and 'x-check' cannot be names or ids.
 CREATE TABLE #auth (changed int)
-INSERT #auth EXEC ACCOUNT_DBF.dbo.usp_AdminSetLoginAuthority @account = 'nobody-check', @authority = 'E'
+INSERT #auth EXEC ACCOUNT_DBF.dbo.usp_AdminSetLoginAuthority @account = 'nobody-check', @authority = 'J'
 INSERT #auth EXEC ACCOUNT_DBF.dbo.usp_AdminSetLoginAuthority @account = 'nobody-check', @authority = 'p'
-INSERT #auth EXEC CHARACTER_01_DBF.dbo.usp_AdminSetCharacterAuthority @account = 'nobody-check', @authority = 'A'
+INSERT #auth EXEC ACCOUNT_DBF.dbo.usp_AdminSetLoginAuthority @account = 'nobody-check', @authority = 'E'
+INSERT #auth EXEC CHARACTER_01_DBF.dbo.usp_AdminSetCharacterAuthority @account = 'nobody-check', @authority = 'L'
 INSERT #auth EXEC CHARACTER_01_DBF.dbo.usp_AdminSetCharacterAuthority @account = 'nobody-check', @authority = 'Z'
-INSERT #auth EXEC CHARACTER_01_DBF.dbo.usp_AdminCharacterAuthority @idPlayer = 'x-check', @authority = 'B'
+INSERT #auth EXEC CHARACTER_01_DBF.dbo.usp_AdminSetCharacterAuthority @account = 'nobody-check', @authority = 'A'
+INSERT #auth EXEC CHARACTER_01_DBF.dbo.usp_AdminCharacterAuthority @idPlayer = 'x-check', @authority = 'F'
 INSERT #auth EXEC CHARACTER_01_DBF.dbo.usp_AdminCharacterAuthority @idPlayer = 'x-check', @authority = 'f'
-IF (SELECT COUNT(*) FROM #auth WHERE changed = 0) = 3 AND (SELECT COUNT(*) FROM #auth WHERE changed = -1) = 3
-	PRINT 'PASS 10: the VIP letters are taken, a lower-case or unknown letter is refused'
+INSERT #auth EXEC CHARACTER_01_DBF.dbo.usp_AdminCharacterAuthority @idPlayer = 'x-check', @authority = 'B'
+IF (SELECT COUNT(*) FROM #auth WHERE changed = 0) = 3 AND (SELECT COUNT(*) FROM #auth WHERE changed = -1) = 6
+	PRINT 'PASS 10: the panel''s letters are taken; VIP, lower-case and unknown letters are refused'
 ELSE
 	PRINT 'FAIL 10: the authority procedures take or refuse the wrong letters'
 DROP TABLE #auth

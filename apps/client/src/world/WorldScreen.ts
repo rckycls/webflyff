@@ -150,6 +150,7 @@ import { QueryEquipWindow } from './hud/queryEquipWindow';
 import type { QueryEquipTarget } from './hud/queryEquipWindow';
 import { combatMusicOf, gameOptionCommand, loadGameOptions, saveGameOptions } from './options/gameOptions';
 import type { QueryEquipPart } from '@flyffweb/protocol';
+import { vipLevelOf } from '@flyffweb/protocol';
 import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
@@ -1024,6 +1025,8 @@ export class WorldScreen {
           const view = this.mapView();
           return tooltipTax(this.taxBook, view.worldId, { x: view.pos[0], z: view.pos[2] }, this.worldMapData?.continents);
         },
+        // 2026-11-19 (VIP perks): the own VIP level, for the NPC shop's VIP price
+        vipLevel: () => vipLevelOf(this.world?.self()?.added.player?.authorization ?? 0),
       });
       this.questMarkerIndex = this.questCatalog === null ? null : new QuestMarkerIndex(this.questCatalog);
       if (this.over) return;
@@ -2186,6 +2189,12 @@ export class WorldScreen {
       // 2026-11-09 (pets R2): the own buffs, for the feed pocket's tooltip (PutPetFeedPocket)
       hasBuff: (buffType, id) => this.world?.self()?.buffs.list(this.world.nowMs())
         .some((buff) => buff.buffType === buffType && buff.id === id) === true,
+      // custom (owner 2026-11-19, VIP perks): the bag's VIP buttons, for VIP1-VIP4 only; no sort while trading
+      vip: {
+        level: () => vipLevelOf(this.world?.self()?.added.player?.authorization ?? 0),
+        sort: () => { if (!this.tradeLimit()) this.session.sendVipSortInventory(); },
+        perin: () => { if (!this.tradeLimit()) this.session.sendVipPerinConvert(); },
+      },
       drop: (id, count) => {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
         // 2026-11-10 (bank-mail): nor while the bank is open (WndWorld.cpp:7776-7797)

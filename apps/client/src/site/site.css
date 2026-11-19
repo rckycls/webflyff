@@ -158,6 +158,10 @@ html.has-art .site-top .site-logo { height: 100%; }
 .vip-tier-name { font-weight: 700; letter-spacing: 0.06em; }
 .vip-tier-price { color: var(--gold-1); font: 800 28px/1.2 var(--font); }
 .vip-tier-month { color: var(--quiet); font-size: 14px; }
+/* 2026-11-19 (VIP perks): what each tier gives, under its price */
+.vip-tier-perks { margin: 8px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.vip-tier-perks li + li { margin-top: 2px; }
+.vip-gift { color: var(--gold-1); }
 .vip-pay-line { margin-bottom: 12px; }
 .vip-pay-line:empty { display: none; }
 .vip-qrs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }

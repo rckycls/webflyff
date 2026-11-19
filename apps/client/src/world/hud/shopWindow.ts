@@ -1,4 +1,5 @@
-import { createItemDetails, ownTooltipContext, positionItemDetails } from './itemDetails';
+import { vipShopPrice } from '@flyffweb/protocol';
+import { createItemDetails, ownTooltipContext, ownVipLevel, positionItemDetails } from './itemDetails';
 import { COUNT_KEYS, CountPad, isPhone, numpad, textButton } from './numpad';
 import type { WebNpc } from '@flyffweb/formats';
 import type { InventoryItem } from '@flyffweb/protocol';
@@ -74,13 +75,16 @@ export class ShopWindow {
   /**
    * The price box's number (`CWndShop::OnDraw`, WndShop.cpp:704-766): a stock item's `GetCost()`, a chip vendor's
    * `GetChipCost()` (:722-736, 2026-11-15); a bag item's sale price, `GetCost() / 4` at least 1, at every vendor.
+   * 2026-11-19 (VIP perks): a VIP's stock price is the World server's VIP price (`vipShopPrice`).
    */
   private priceOf(selection: Selection | null): number {
     if (selection === null) return 0;
     const prop = this.data.itemProps.get(selection.itemId);
     if (selection.kind === 'buy' && this.chipShop) return Math.max(0, chipCost(prop));
     const cost = prop?.cost;
-    return cost === undefined ? 0 : selection.kind === 'buy' ? cost : Math.max(1, Math.floor(cost / 4));
+    if (cost === undefined) return 0;
+    const sellBack = Math.max(1, Math.floor(cost / 4));
+    return selection.kind === 'buy' ? vipShopPrice(cost, sellBack, selection.itemId, ownVipLevel()) : sellBack;
   }
   private check(): boolean {
     if (this.id === null || !this.frame.isOpen) return false;

@@ -27,11 +27,12 @@ describe('authority letters', () => {
     expect(isVipAuthority(0x46)).toBe(false);
   });
 
-  it('gives every settable letter a title', () => {
-    expect(SETTABLE_AUTHORITIES).toEqual(['F', 'A', 'B', 'C', 'E', 'J', 'L', 'M', 'N', 'O', 'P']);
+  it('gives every settable letter a title (2026-11-19: VIP letters come from the VIP list, not by hand)', () => {
+    expect(SETTABLE_AUTHORITIES).toEqual(['F', 'J', 'L', 'M', 'N', 'O', 'P']);
     expect(SETTABLE_AUTHORITIES.map((letter) => AUTHORITY_TITLES[letter])).toEqual([
-      'Player', 'VIP 1', 'VIP 2', 'VIP 3', 'VIP 4', 'Helper', 'GM 1', 'GM 2', 'GM 3', 'Operator', 'Admin',
+      'Player', 'Helper', 'GM 1', 'GM 2', 'GM 3', 'Operator', 'Admin',
     ]);
+    expect(VIP_AUTHORITIES.map((letter) => AUTHORITY_TITLES[letter])).toEqual(['VIP 1', 'VIP 2', 'VIP 3', 'VIP 4']);
   });
 
   it('plays with the account letter unless the account is a player or a VIP (DbManagerJoin.cpp)', () => {

@@ -633,6 +633,14 @@ export class OwnState {
    */
   apply(message: WorldMessage, objectId: number): OwnEvent[] {
     switch (message.type) {
+      case 'vipInventorySort':
+        // custom (owner 2026-11-19, VIP perks): the bag's new order after the VIP sort (`CUser::AddVipInventorySort`):
+        // each slot's object id, as the server holds them (`m_apIndex`), the worn part the same as before
+        if (objectId === this.objectId && message.slots.length <= this.inventorySlots.length) {
+          message.slots.forEach((id, slot) => { this.inventorySlots[slot] = id; });
+          this.inventoryRevision++;
+        }
+        return [];
       case 'profileStats':
         if (objectId === this.objectId && message.values.length === 14) this.profileStats = [...message.values];
         return [];

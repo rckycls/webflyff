@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- custom (owner 2026-11-19, VIP perks): the bag's sort button: three bars, longest first, and a down arrow -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff2c4"/>
+      <stop offset="1" stop-color="#d9a441"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#6b3d12" stroke-width="1" stroke-linejoin="round">
+    <rect x="1.5" y="2.5" width="8" height="2.5" rx="1" fill="url(#g)"/>
+    <rect x="1.5" y="6.75" width="6" height="2.5" rx="1" fill="url(#g)"/>
+    <rect x="1.5" y="11" width="4" height="2.5" rx="1" fill="url(#g)"/>
+    <path d="M12 2.5v8.5h-2.25L12.75 14.5 15.75 11H13.5V2.5z" fill="url(#g)"/>
+  </g>
+</svg>

@@ -272,13 +272,18 @@ export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: Se
         const session = sessionOf(req);
         const [tiers, qrs, me] = await Promise.all([store.tiers(), store.qrs(), session === undefined ? undefined : store.mine(session.user)]);
         send(res, 200, {
-          tiers,
+          // 2026-11-19 (VIP perks): each tier's Auto Play hours a week (null: no limit), for the tier cards
+          tiers: tiers.map((tier) => {
+            const minutes = limitMinutes(tier.level);
+            return { ...tier, autoPlayHours: minutes === null ? null : minutes / 60 };
+          }),
           qrs: qrs.map((qr) => ({ ...qr, image: `/api/vip/qr/${qr.id}` })),
           maxPending: deps.vip.maxPendingPerAccount,
           ...(session === undefined || me === undefined ? {} : {
             me: {
               account: session.user, vip: me.vip,
               requests: me.requests.map(({ hasReceipt, ...r }) => ({ ...r, receipt: hasReceipt ? `/api/vip/receipt/${r.id}` : null })),
+              gift: me.gift, // 2026-11-19: the latest gift box
             },
           }),
         });

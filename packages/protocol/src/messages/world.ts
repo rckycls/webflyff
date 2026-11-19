@@ -299,6 +299,8 @@ export type WorldPacket =
   | { type: 'quePetResurrection' | 'pickupPetAwakeningCancel'; itemObjectId: number }
   /** custom (owner 2026-11-16): the Pet Filter's mask (world/pets.ts `encodePetFilter`). */
   | { type: 'petFilter'; mask: number }
+  /** custom (owner 2026-11-19, VIP perks): the bag's VIP buttons (world/vipBag.ts), no body. */
+  | { type: 'vipSortInventory' | 'vipPerinConvert' }
   | { type: 'transformItem'; transform: number; parts: Array<{ objectId: number; count: number }> }
   | { type: 'setPlayerName'; playerId: number; name: string }
   | { type: 'enchant' | 'piercing' | 'randomScroll'; targetId: number; materialId: number }
@@ -637,6 +639,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const mask = r.u32(); r.expectEnd();
       return { type: 'petFilter', mask };
     }
+    case PacketType.VIP_SORT_INVENTORY: case PacketType.VIP_PERIN_CONVERT: // custom (owner 2026-11-19, VIP perks)
+      r.expectEnd();
+      return { type: packetType === PacketType.VIP_SORT_INVENTORY ? 'vipSortInventory' : 'vipPerinConvert' };
     case PacketType.TRANSFORM_ITEM: { // CTransformStuff::Serialize's loading side (pet.cpp:705-718), each part 8 bytes
       const transform = r.i32(), size = r.u32();
       if (size * 8 !== r.remaining()) throw new ProtocolError('Invalid TRANSFORM_ITEM size');

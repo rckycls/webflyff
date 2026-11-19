@@ -23,10 +23,11 @@ function procedure(name: string): string {
   return code.slice(at, code.indexOf('\nGO', at));
 }
 
-it('takes the VIP letters and refuses every other letter, compared as bytes (a lower-case one would be past P)', () => {
+it('takes the panel\'s letters, not the VIP ones (2026-11-19: they come from the VIP list), compared as bytes (a lower-case one would be past P)', () => {
   for (const name of ['usp_AdminSetLoginAuthority', 'usp_AdminSetCharacterAuthority', 'usp_AdminCharacterAuthority']) {
     const text = procedure(name);
-    expect(text).toContain('CAST(@authority AS binary(1)) NOT IN (0x46, 0x41, 0x42, 0x43, 0x45, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)');
+    expect(text).toContain('CAST(@authority AS binary(1)) NOT IN (0x46, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)');
+    expect(text).not.toMatch(/0x41|0x42|0x43|0x45/);
     expect(text).toContain('SELECT -1 AS changed');
   }
   expect(procedure('usp_AdminCharacterAuthority')).toMatch(/WHERE m_idPlayer = @idPlayer AND serverindex = '01'/);
@@ -52,6 +53,11 @@ it('checks the new procedures in admin-check.sql, 10 PASS lines', () => {
     expect(check).toContain(name);
   }
   expect([...check.matchAll(/PRINT 'PASS (\d+):/g)].map((m) => Number(m[1]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  // 2026-11-19 (VIP perks): check 10 expects the VIP letters refused, a panel letter taken
+  const ten = check.slice(check.indexOf('-- 10.'), check.indexOf('DROP TABLE #auth'));
+  expect(ten).toContain("@authority = 'J'");
+  expect(ten).toContain("@authority = 'L'");
+  expect(ten).toContain('PASS 10: the panel\'\'s letters are taken; VIP, lower-case and unknown letters are refused');
 });
 
 it('makes only usp_Admin procedures', () => {

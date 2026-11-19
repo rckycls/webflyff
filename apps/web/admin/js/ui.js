@@ -167,14 +167,19 @@ export function banText(blockTime) {
 
 /**
  * The levels the panel gives, in its order: packages/protocol's SETTABLE_AUTHORITIES and AUTHORITY_TITLES (a test
- * keeps the two the same). VIP 1-4 (A, B, C, E) are titles only: in the game they play exactly as a Player.
+ * keeps the two the same). 2026-11-19 (VIP perks): no VIP letters here: the website gives and takes them from the VIP
+ * list (VIP tab, Give VIP).
  */
 export const AUTHORITY_NAMES = {
-  F: 'Player', A: 'VIP 1', B: 'VIP 2', C: 'VIP 3', E: 'VIP 4', J: 'Helper', L: 'GM 1', M: 'GM 2', N: 'GM 3', O: 'Operator', P: 'Admin',
+  F: 'Player', J: 'Helper', L: 'GM 1', M: 'GM 2', N: 'GM 3', O: 'Operator', P: 'Admin',
 };
 
+/** VIP 1-4 (A, B, C, E): titles only, a Player in the game; shown, never picked. */
+export const VIP_NAMES = { A: 'VIP 1', B: 'VIP 2', C: 'VIP 3', E: 'VIP 4' };
+
 export function authorityName(letter) {
-  return AUTHORITY_NAMES[letter] ? `${AUTHORITY_NAMES[letter]} (${letter})` : `Other (${letter})`;
+  const name = AUTHORITY_NAMES[letter] ?? VIP_NAMES[letter];
+  return name ? `${name} (${letter})` : `Other (${letter})`;
 }
 
 /** A Player or VIP letter: an account with one lets each character's own level count. */
@@ -182,9 +187,13 @@ export function isPlayerLevel(letter) {
   return letter === 'F' || letter === 'A' || letter === 'B' || letter === 'C' || letter === 'E';
 }
 
-/** A select of the levels, `current` picked. */
+/**
+ * A select of the levels, `current` picked. A VIP letter shows as Player: VIP comes from the VIP tab, so saving the
+ * level gives the account (or character) the player letter and the next VIP check puts the VIP letter back if it is live.
+ */
 export function levelSelect(current) {
-  return el('select', {}, Object.entries(AUTHORITY_NAMES).map(([letter, name]) => el('option', { value: letter, text: `${name} (${letter})`, selected: letter === current })));
+  const picked = VIP_NAMES[current] ? 'F' : current;
+  return el('select', {}, Object.entries(AUTHORITY_NAMES).map(([letter, name]) => el('option', { value: letter, text: letter === 'F' && VIP_NAMES[current] ? `${name} (${letter}), now ${VIP_NAMES[current]} from the VIP tab` : `${name} (${letter})`, selected: letter === picked })));
 }
 
 /** An ISO time as the browser's local date and time. */
