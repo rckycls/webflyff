@@ -5,7 +5,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppId } from '../src/world/hud/applets';
 import type { UiArt } from '../src/world/hud/art';
-import { MOBILE_SHORTCUTS, MobileTools, SIEGE_SHORTCUT, iconCssSize, siegeButton } from '../src/world/hud/mobileTools';
+import { MOBILE_SHORTCUTS, MobileTools, iconCssSize } from '../src/world/hud/mobileTools';
+
+/** A finger's pointer event (jsdom's boxes are all 0 x 0 at 0, 0: (0, 0) is on a button, anything else off it). */
+function finger(type: string, id: number, x = 0, y = 0): Event {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+  Object.defineProperties(event, { pointerType: { value: 'touch' }, pointerId: { value: id } });
+  return event;
+}
 
 const art = (have: (key: string) => boolean = () => true): UiArt => ({
   url: (key) => (have(key) ? `/assets/${key}` : ''),
@@ -30,32 +37,33 @@ function rig(uiArt = art()) {
 }
 
 describe('MOBILE_SHORTCUTS (2026-11-10, owner: the important windows of the Start menu)', () => {
-  it("lists seven Start-menu windows (Status's place is the Siege Ranking icon's, C2) in CWndTaskMenu's order (WndTaskBar.cpp:2595-2734), each with its applet's icon", () => {
+  it("lists ten windows in two rows of five (2026-11-20, owner: the Teleport in Auto Play's place, rearranged), each with its applet's icon", () => {
     expect(MOBILE_SHORTCUTS.map(({ label, applet, window }) => [label, applet, window])).toEqual([
       ['Character', AppId.CHARACTER3, 'character'],
       ['Bag', AppId.INVENTORY, 'inventory'],
       ['Skill', AppId.SKILL3, 'skills'],
       ['Quest', AppId.QUEST_EX_LIST, 'quests'],
+      ['Teleport', AppId.TELEPORT, 'teleport'],
       ['World Map', AppId.MAP, 'worldmap'],
-      ['Messenger', AppId.MESSENGER_EX, 'messenger'],
       ['Party', AppId.PARTY, 'party'],
-      // 2026-11-18 (owner, "2 rows of 5 include pet filter and autoplay"): the client's own windows, after the Start menu's
+      ['Messenger', AppId.MESSENGER_EX, 'messenger'],
       ['Pet Filter', AppId.PETFILTER, 'petFilter'],
-      ['Auto Play', AppId.AUTO_PLAY, 'autoPlay'],
+      ['Siege Ranking', AppId.SIEGE_RANKING, 'siegeRanking'],
     ]);
   });
 
-  it('ranks them for a narrow phone: Bag, Skill, Character and Quest stay longest, Status goes first', () => {
+  it('ranks them in their order but Character after Bag and Skill', () => {
     const byRank = [...MOBILE_SHORTCUTS].sort((a, b) => a.rank - b.rank).map(({ label }) => label);
-    expect(byRank).toEqual(['Bag', 'Skill', 'Character', 'Quest', 'Party', 'World Map', 'Messenger', 'Pet Filter', 'Auto Play']);
+    expect(byRank).toEqual(['Bag', 'Skill', 'Character', 'Quest', 'Teleport', 'World Map', 'Party', 'Messenger', 'Pet Filter', 'Siege Ranking']);
   });
 
-  it("shows Pet Filter's and Auto Play's own icons without their frame (src/icons/bare, ownIcons.ts)", () => {
+  it("shows the client's own windows' icons without their frame (src/icons/bare, ownIcons.ts)", () => {
     const tools = new MobileTools(art(), MOBILE_SHORTCUTS.map((shortcut) => ({ ...shortcut, run: () => {} })), document);
     const icon = (label: string) => tools.buttons.find((b) => b.getAttribute('aria-label') === label)!
       .querySelector<HTMLElement>('.hud-mobile-tool-icon')!.style.backgroundImage;
+    expect(icon('Teleport')).toBe('url("/assets/ui/bare/icon_teleport.png")');
     expect(icon('Pet Filter')).toBe('url("/assets/ui/bare/icon_petfilter.png")');
-    expect(icon('Auto Play')).toBe('url("/assets/ui/bare/icon_autoplay.png")');
+    expect(icon('Siege Ranking')).toBe('url("/assets/ui/bare/icon_siegeranking.png")');
     tools.dispose();
   });
 
@@ -163,32 +171,36 @@ describe('iconCssSize', () => {
   });
 });
 
-describe('the Siege Ranking icon (C2)', () => {
-  it("is the Siege Ranking applet's (2026-11-17, owner: FlyffWeb's own icon, no longer the winner trophy)", () => {
-    expect(SIEGE_SHORTCUT).toMatchObject({ label: 'Siege Ranking', applet: AppId.SIEGE_RANKING, window: 'siegeRanking' });
-  });
-
-  it('shows its own icon without its frame, as the other shortcuts do', () => {
-    const run = vi.fn();
-    const tools = new MobileTools(art(), [{ label: SIEGE_SHORTCUT.label, applet: SIEGE_SHORTCUT.applet, run }], document);
-    const b = tools.buttons[0]!;
-    expect(b.dataset.icon).toBe('');
-    expect(b.querySelector<HTMLElement>('.hud-mobile-tool-icon')!.style.backgroundImage).toBe('url("/assets/ui/bare/icon_siegeranking.png")');
-    b.click();
-    expect(run).toHaveBeenCalledTimes(1);
+describe('a finger on a shortcut (2026-11-20, owner: "allow opening a window while walking on mobile")', () => {
+  it("runs it on the finger's lift, and the click a phone adds after a lone tap does nothing", () => {
+    const { run, tools, button } = rig();
+    button('Bag').dispatchEvent(finger('pointerdown', 7));
+    expect(run.bag).not.toHaveBeenCalled();
+    button('Bag').dispatchEvent(finger('pointerup', 7));
+    expect(run.bag).toHaveBeenCalledOnce();
+    button('Bag').click();
+    expect(run.bag).toHaveBeenCalledOnce();
     tools.dispose();
   });
 
-  it("the desktop's button shows the same icon; its short text while the icon is missing", () => {
-    const run = vi.fn();
-    const have = siegeButton(art(), run, document);
-    expect(have.style.backgroundImage).toBe('url("/assets/ui/bare/icon_siegeranking.png")');
-    expect(have.textContent).toBe('');
-    have.click();
-    expect(run).toHaveBeenCalledTimes(1);
-    const none = siegeButton(art(() => false), run, document);
-    expect(none.style.backgroundImage).toBe('');
-    expect(none.textContent).toBe('Siege');
-    expect(none.getAttribute('aria-label')).toBe('Siege Ranking');
+  it("runs it for a second finger's tap, which brings no click while the first holds the joystick", () => {
+    const { run, tools, button } = rig();
+    button('Skill').dispatchEvent(finger('pointerdown', 2));
+    button('Skill').dispatchEvent(finger('pointerup', 2));
+    expect(run.skill).toHaveBeenCalledOnce();
+    tools.dispose();
+  });
+
+  it('runs nothing for a finger that slid off the icon, or another finger lifting, or a cancelled press', () => {
+    const { run, tools, button } = rig();
+    button('Bag').dispatchEvent(finger('pointerdown', 3));
+    button('Bag').dispatchEvent(finger('pointerup', 3, 40, 40));
+    button('Bag').dispatchEvent(finger('pointerdown', 4));
+    button('Bag').dispatchEvent(finger('pointerup', 5));
+    button('Bag').dispatchEvent(finger('pointerdown', 6));
+    button('Bag').dispatchEvent(finger('pointercancel', 6));
+    button('Bag').dispatchEvent(finger('pointerup', 6));
+    expect(run.bag).not.toHaveBeenCalled();
+    tools.dispose();
   });
 });

@@ -1698,7 +1698,8 @@ fieldset:disabled .btn {
     grid-template-columns: repeat(5, auto);
     position: absolute;
     /* 2026-11-13: under the windows and menus (from 1), which their second row would otherwise cover: an open window's
-       close button, an NPC's menu */
+       close button, an NPC's menu. 2026-11-20 (owner, "never hide the icons above when a window is open", "can the icons go
+       under the windows?"): no window hides them any more; they stay under it, and show wherever it leaves them free */
     z-index: 0;
     top: 0;
     right: calc(var(--game-safe-right, 0px) + 12px);
@@ -1969,7 +1970,7 @@ fieldset:disabled .btn {
   /* 2026-11-11 (owner): on a phone the two windows keep V15's layout at the frame's 0.7, as the Messenger does: the list in
      the middle above the task bar and, with a detail, the two centred together (QuestWindow.openDetail). The text is 14 px,
      the trees and texts scroll by finger, the rows are 26 px, and the buttons' press areas are larger than their pictures. */
-  .world:has(.hud-quests:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots, .hud-quest-tracker) { visibility: hidden; }
+  .world:has(.hud-quests:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots, .hud-quest-tracker) { visibility: hidden; }
   :is(.hud-quests, .hud-quest-detail),
   :is(.hud-quests, .hud-quest-detail) > .hud-window-title,
   :is(.hud-quests, .hud-quest-detail) :is(.hud-res-static-text, .hud-res-text-body, .quest-filter-field, .hud-res-combo-rows > [role='option'], .hud-tab-title) { font-size: 14px; }
@@ -2303,11 +2304,11 @@ fieldset:disabled .btn {
 /* Landscape mobile windows follow the classic wide Character and Skill Tree layouts. */
 .hud-character-landscape,
 .hud-skills-landscape { background: #f4ece3; border-radius: 6px; }
-.world:has(:is(.hud-character-landscape, .hud-skills-landscape):not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+.world:has(:is(.hud-character-landscape, .hud-skills-landscape):not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
 /* the party window, fitted whole to a phone: the window's buttons off it, and its 12 px text in the columns laid out for it
    (2026-11-05: the phone's 14 px cut "Distribute Item"); the fit scales it up */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-party:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-party:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-party[data-mobile-window] { font-size: 12px; }
 }
 .hud-character-landscape { font-size: 15px !important; }
@@ -2425,7 +2426,7 @@ fieldset:disabled .btn {
 }
 .hud-village-radio-icon { flex: none; width: 14px; height: 14px; background-repeat: no-repeat; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-select-village:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-select-village:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-village-radio::before { content: ''; position: absolute; inset: -4px 0; }
   /* the window stays at its own size on a phone (mobileScale 1): its words at the phones' 14 px */
   .hud-select-village :is(.hud-select-village-prompt, .hud-village-radio) { font-size: 14px; white-space: nowrap; }
@@ -2436,7 +2437,7 @@ fieldset:disabled .btn {
 .teleporter-map button { position: absolute; width: 20px; height: 20px; min-height: 0; padding: 0; border: 0; background: center / 16px 16px no-repeat; transform: translate(-50%, -50%); cursor: pointer; }
 .teleporter-map button:hover, .teleporter-map button:focus-visible { background-size: 20px 20px; outline: 1px solid #fff8; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-teleporter:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-teleporter:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .teleporter-map button::before { content: ''; position: absolute; inset: -12px; }
 }
 
@@ -2539,7 +2540,7 @@ fieldset:disabled .btn {
   -webkit-tap-highlight-color: transparent;
 }
 .hud-worldmap-close span { width: 15px; height: 14px; background: transparent no-repeat -15px 0; }
-.world:has(.hud-worldmap:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+.world:has(.hud-worldmap:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
 
 /* The Option window's Sound Option group (Piece 6 M2, hud/optionWindow.ts): Neuz's controls at their own spacing */
 .hud-option-label { position: absolute; height: 18px; line-height: 18px; color: #000; font-size: 12px; white-space: nowrap; }
@@ -3158,7 +3159,7 @@ fieldset:disabled .btn {
 .hud-instant-text { position: absolute; padding: 2px 4px; box-sizing: border-box; overflow: hidden; line-height: 14px; white-space: pre-wrap; cursor: pointer; }
 .hud-instant-from { color: #0000ff; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-messenger:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-messenger:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   :is(.hud-messenger, .hud-add-friend, .hud-friend-confirm, .hud-message, .hud-instant-message),
   :is(.hud-messenger, .hud-add-friend, .hud-friend-confirm, .hud-message, .hud-instant-message) :is(input, textarea),
   .hud-messenger .hud-messenger-tab { font-size: 14px; }
@@ -3190,7 +3191,7 @@ fieldset:disabled .btn {
    theme"). The request, the final box and the penya's box open over it as Neuz's: their own sizes, their buttons' pictures,
    in the middle. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-trade:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-trade:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-trade { left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important; }
   .hud-trade .hud-picture-button::before { content: ''; position: absolute; inset: -8px -4px; }
   :is(.hud-trade-request, .hud-trade-confirm, .hud-trade-gold) { top: 48px !important; transform: none !important; z-index: 70 !important; }
@@ -3352,7 +3353,7 @@ fieldset:disabled .btn {
    words a finger can read (as the trade's and the shop's), the text fields 16 px (no zoom on focus); a tap on a member
    opens its menu (no right click). The joystick and the shortcuts hide while the guild window is open. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-guild:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-guild:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-guild, .hud-guild-dialog, .hud-guild-menu,
   :is(.hud-guild, .hud-guild-dialog) :is(.hud-res-static-text, .hud-res-text-body, .hud-guild-member-text, .hud-window-title),
   .hud-guild .hud-guild-tab { font-size: 14px; }
@@ -3376,7 +3377,7 @@ fieldset:disabled .btn {
    description on its edit (whole up to 64 px, then scrolled), the seven floors on theirs, each 26 px high for a finger
    (Neuz's 15), 12 px; a tap is the click. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-heaven-tower:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-heaven-tower:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-heaven-tower:not([hidden]) {
     left: calc(50% - min(192px, 50% - 8px)) !important; top: 8px !important; transform: none !important;
     width: min(384px, calc(100% - 16px)) !important; height: auto !important;
@@ -3541,7 +3542,7 @@ fieldset:disabled .btn {
    number pad). 2026-11-14 (owner): in the V15 look, compact: the frame, 22 px tabs, the cells on Neuz's slot picture, six
    34 px cells to a row, Neuz's 12 px words. The PIN windows open over the panels; their buttons are words. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-bank:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-bank:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-bank-pin { z-index: 70 !important; }
   .hud-bank:not([hidden]) {
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important; min-width: 0 !important;
@@ -3625,7 +3626,7 @@ fieldset:disabled .btn {
    title, six 34 px cells to a row on Neuz's slot picture, a 24 px penya line, Neuz's 12 px words, the silver word buttons of
    the phone's other windows; the bag beside it shows its items alone, as beside the bank. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-guild-bank:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-guild-bank:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   :is(.hud-guild-merit, .hud-guild-bank-log) { z-index: 70 !important; }
   .hud-guild-bank:not([hidden]) {
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important; min-width: 0 !important;
@@ -3724,7 +3725,7 @@ fieldset:disabled .btn {
    34 px slots at the left with Reset, Cancel and Start (their pictures) under them; the words, the three angels' rates and
    the white angel's lines at the right; Neuz's 12 px. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-summon-angel:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-summon-angel:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-summon-angel:not([hidden]) {
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important; min-width: 0 !important;
     width: min(480px, calc(100% - var(--bag-window-width, 60%) - 28px)) !important; height: auto !important;
@@ -3837,7 +3838,7 @@ fieldset:disabled .btn {
    (owner): in the V15 look, compact: the frame, Neuz's 12 px words, the edit tiles behind the boxes, the lists and the edits,
    rows of 26 px, the buttons their own pictures a quarter bigger. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-lord:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-lord:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   /* the event icons under the phone's rows of top icons */
   .hud-lord-events { top: 56px; }
   .hud-lord:not([hidden]) {
@@ -4040,7 +4041,7 @@ fieldset:disabled .btn {
   /* the panels at the left beside the bag; the controls hidden while one is open (the bag hides them too). (2026-11-14, round
      two: Trade, Bank, the Forsaken Tower, the Angel window and the Lord's windows have their own blocks.) */
   .world:has(:is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor):not([hidden]))
-    :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+    :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor) {
     --panel-room: calc(100% - var(--bag-window-width, 60%) - 28px);
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important; min-width: 0 !important;
@@ -4576,7 +4577,7 @@ fieldset:disabled .btn {
    the silver word buttons; the House List and the House box keep their size, with word buttons. While a piece is placed
    the bar at the top turns it 45 degrees either way, places it (OK) or drops it (Cancel); a finger drag moves it. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-housing:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-housing:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   :is(.hud-housing, .hud-room-list, .hud-quit-room)::before {
     content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
   }
@@ -4670,7 +4671,7 @@ fieldset:disabled .btn {
    448 px frame, its 40 px rows a finger's size; the fee's buttons as words; the placing bar below the "Installed" strip. */
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-guild-house:not([hidden]) { left: 4px !important; top: 86px !important; transform: none !important; }
-  .world:has(.hud-gh-storage:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-gh-storage:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   :is(.hud-gh-storage, .hud-gh-upkeep, .hud-guild-house, .hud-gh-showone)::before {
     content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
   }
@@ -4779,7 +4780,7 @@ fieldset:disabled .btn {
    at the left, the styles (or the two rows of faces) and the colour bars at the right. Every box keeps its size and its
    piece of the window's picture (beautyWindows.ts, crop), so the models, styles, faces and bars are Neuz's own. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-beauty:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-beauty:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   :is(.hud-beauty, .hud-beauty-confirm) { background: none !important; box-shadow: none !important; border-radius: 0 !important; }
   :is(.hud-beauty, .hud-beauty-confirm) > .hud-window-frame {
     display: grid !important; grid-template-columns: 16px minmax(0, 1fr) 16px; grid-template-rows: 16px 16px minmax(0, 1fr) 16px;
@@ -4894,7 +4895,7 @@ fieldset:disabled .btn {
    480 high), its controls in a column that scrolls, Neuz's 12 px words, the picture buttons as silver pills with their words
    (the pictures are 72 x 20: too small for a finger). */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-gc:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-gc:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-gc:not([hidden]) {
     left: calc(50% - min(230px, 50% - 8px)) !important; top: 8px !important; transform: none !important; z-index: 60 !important;
     width: min(460px, calc(100% - 16px)) !important; height: auto !important;
@@ -5102,17 +5103,6 @@ fieldset:disabled .btn {
   .hud-sr .hud-sr-row { height: 22px; line-height: 22px; }
 }
 
-/* 2026-11-15 (owner, Guild Siege C2): the desktop's Siege Ranking button, the V15 winner trophy, left of the Navigator (144 px
-   wide at the right edge; the mail notice sits 140 px in); the phone has the icon among its shortcuts instead */
-.hud-siege-button {
-  position: absolute; z-index: 20; top: 4px; right: calc(var(--game-safe-right, 0px) + 176px); width: 32px; height: 32px; padding: 0;
-  pointer-events: auto; border: 0; background: transparent no-repeat center / contain; color: #fff; font: bold 10px Verdana, Arial, sans-serif;
-  text-shadow: 0 0 3px #000, 0 0 3px #000; cursor: pointer;
-}
-.hud-siege-button:active { filter: brightness(1.4); }
-@media (max-width: 1000px) and (pointer: coarse) {
-  .hud-siege-button { display: none; }
-}
 
 /* custom (owner 2026-11-15): the Auto Play window (hud/autoPlay/autoPlayWindow.ts): Farm, Potions and Skills under Neuz's
    tab strip (hud/guildCombat/tabs.ts), in the Action Slot window's colours */
@@ -5172,19 +5162,36 @@ fieldset:disabled .btn {
 }
 
 /* custom (owner 2026-11-15): Auto Play's AUTO button (hud/autoPlay/autoButton.ts): desktop, at the right end above the task
-   bar; grey while off, gold and pulsing while it runs, a red "!" after a stop */
+   bar; a red "!" after a stop. 2026-11-20 (owner, "move Autoplay button icon to the place of Auto icon. Add an active
+   autoplay indicator like a glow animation or rotate glow"): Auto Play's own round icon, a little dimmed while off; while
+   the farm bot runs, bright, a gold ring of light turning round it and a soft gold pulse */
 .hud-auto-button {
   position: absolute; right: 8px; bottom: calc(var(--hud-taskbar-height, 48px) + 8px); z-index: 30; pointer-events: auto;
-  min-width: 54px; height: 26px; padding: 0 8px; border: 1px solid #8f8f8f; border-radius: 13px;
-  background: linear-gradient(#e9e9e9, #b9b9b9); color: #3a3a3a; font: bold 11px/24px Verdana, Arial, sans-serif;
-  box-shadow: 0 1px 3px #0007; cursor: pointer;
+  width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer;
+  filter: drop-shadow(0 1px 2px #0009);
 }
-.hud-auto-button[data-state='running'] {
-  border-color: #a8791c; background: linear-gradient(#ffe48a, #e0a526); color: #4a2f00; animation: hud-auto-pulse 1.6s ease-in-out infinite;
+.hud-auto-icon { position: absolute; inset: 0; border-radius: 50%; background: no-repeat center / 100% 100%; }
+.hud-auto-button:not([data-state='running']) .hud-auto-icon { filter: saturate(.7) brightness(.92); }
+.hud-auto-button:active .hud-auto-icon { filter: brightness(1.25); }
+.hud-auto-button::before {
+  content: ''; position: absolute; inset: -6px; border-radius: 50%; opacity: 0; pointer-events: none;
+  background: conic-gradient(#ffb300 0, transparent 10% 40%, #fff8d6 46%, #ffd84a 52%, #ffb300 58%, transparent 68% 90%, #fff8d6 96%, #ffb300 100%);
+  -webkit-mask: radial-gradient(closest-side, transparent 68%, #000 73%, #000 88%, transparent 95%);
+  mask: radial-gradient(closest-side, transparent 68%, #000 73%, #000 88%, transparent 95%);
+  filter: drop-shadow(0 0 3px #ffd24a) brightness(1.15);
 }
-.hud-auto-mark { margin-left: 3px; color: #c0201a; }
-@keyframes hud-auto-pulse { 50% { box-shadow: 0 0 9px #ffcf4a; } }
-@media (prefers-reduced-motion: reduce) { .hud-auto-button[data-state='running'] { animation: none; } }
+.hud-auto-button[data-state='running']::before { opacity: 1; animation: hud-auto-spin 1.2s linear infinite; }
+.hud-auto-button[data-state='running'] { animation: hud-auto-pulse 1.6s ease-in-out infinite; }
+.hud-auto-mark {
+  position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; border-radius: 8px; background: #d42a1e;
+  color: #ffffff; font: bold 11px/16px Verdana, Arial, sans-serif; text-align: center; box-shadow: 0 0 0 1.5px #ffffff;
+}
+.hud-auto-mark:empty { display: none; }
+@keyframes hud-auto-spin { to { transform: rotate(1turn); } }
+@keyframes hud-auto-pulse { 50% { filter: drop-shadow(0 0 6px #ffcf4a) drop-shadow(0 1px 2px #0009); } }
+@media (prefers-reduced-motion: reduce) {
+  .hud-auto-button[data-state='running'], .hud-auto-button[data-state='running']::before { animation: none; }
+}
 
 /* custom (owner 2026-11-15): Auto Play's Skills tab: the ready skills' 4 slots and the buffs' 8, each with × */
 .auto-skills { display: flex; flex-direction: column; gap: 5px; }
@@ -5227,8 +5234,8 @@ fieldset:disabled .btn {
    column; and the Auto Play window as the phone's other compact windows */
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-auto-button {
-    min-width: 58px; height: 30px; border-radius: 15px; font-size: 12px; line-height: 28px;
-    right: calc(var(--attack-right) + var(--attack-size) / 2 - 29px);
+    width: 44px; height: 44px;
+    right: calc(var(--attack-right) + var(--attack-size) / 2 - 22px);
     bottom: calc(var(--attack-bottom) + var(--attack-size) / 2 + var(--quick-radius) + var(--quick-size) / 2 + 10px);
     touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
   }
@@ -5362,7 +5369,7 @@ fieldset:disabled .btn {
    with an Extra Bag; counts on the number pad. The bank's compact V15 panel: the frame, 22 px tabs, the cells on Neuz's slot
    picture, six 34 px cells to a row, 12 px words. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-bagex:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-bagex:not([hidden])) :is(.joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-bagex:not([hidden]) {
     transform: none !important; min-width: 0 !important;
     width: min(252px, calc(100% - var(--bag-window-width, 60%) - 28px)) !important;

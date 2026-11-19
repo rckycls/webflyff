@@ -462,6 +462,9 @@ ${sparkle(8, 26, 2.2)}${sparkle(63.6, 26.6, 2.6)}${sparkle(53.4, 6.4, 1.8)}${spa
 </svg>`;
 }
 
+/** The AUTO button's copy of Auto Play's icon: three times the Start menu's 32 px. */
+const BIG_SIZE = 96;
+
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 400, height: 100 }, deviceScaleFactor: 1 });
@@ -474,6 +477,17 @@ try {
       await writeFile(file, png);
       console.log(path.relative(process.cwd(), file));
     }
+  }
+  // 2026-11-20 (owner, "move Autoplay button icon to the place of Auto icon"): Auto Play's frameless icon at three times
+  // its size, for the AUTO button (hud/autoPlay/autoButton.ts), which shows it at up to 48 CSS px on a phone's screen
+  await mkdir(path.join(icons, 'big'), { recursive: true });
+  {
+    const big = svg(PICTURES.icon_autoplay!, false).replace('width="32" height="32"', `width="${BIG_SIZE}" height="${BIG_SIZE}"`);
+    await page.setContent(`<html><body style="margin:0;background:transparent">${big}</body></html>`);
+    const png = await page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: BIG_SIZE, height: BIG_SIZE } });
+    const file = path.join(icons, 'big', 'icon_autoplay.png');
+    await writeFile(file, png);
+    console.log(path.relative(process.cwd(), file));
   }
   for (const tier of [1, 2, 3, 4]) {
     const n = MEDAL_SIZE;
