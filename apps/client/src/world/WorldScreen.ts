@@ -55,6 +55,7 @@ import { sightBlocked } from './combat/lineOfSight';
 import { bagIsFull } from './autoplay/bag';
 import { autoPlayLimit } from './autoplay/usageLimit';
 import { VipApi } from '../site/vipApi'; // custom (owner 2026-11-20): the Redeem Code window's site API
+import { CodeMailTaker } from './codes/codeMailTaker';
 import { freeBagSlots } from './codes/codeRedeemer';
 import { RedeemCodeWindow } from './codes/redeemCodeWindow';
 
@@ -825,6 +826,8 @@ export class WorldScreen {
   private teleportWindow: TeleportWindow | undefined;
   /** custom (owner 2026-11-20): the Redeem Code window, from the Start menu's Extras folder (codes/redeemCodeWindow.ts). */
   private redeemCodeWindow: RedeemCodeWindow | undefined;
+  /** custom (owner 2026-11-20): moves a redeemed code's mails into the bag (codes/codeMailTaker.ts). */
+  private codeMailTaker: CodeMailTaker | undefined;
   /** custom (owner 2026-11-20): the site session kept alive while in the world (60 minutes idle), for the codes. */
   private siteKeepAlive: ReturnType<typeof setInterval> | undefined;
   private petFilterSent = PET_FILTER_NONE;
@@ -1268,7 +1271,13 @@ export class WorldScreen {
         continue;
       }
       // 2026-11-10 (bank-mail): the post's (no own state: its items and penya come as CREATEITEM and the penya's point)
-      if (isPostMessage(value)) { if (objectId === self?.objectId) this.postHud?.handle(value); continue; }
+      if (isPostMessage(value)) {
+        if (objectId === self?.objectId) {
+          this.postHud?.handle(value);
+          this.codeMailTaker?.handle(value, performance.now()); // custom (owner 2026-11-20): code mails into the bag
+        }
+        continue;
+      }
       if (value.type === 'block') this.tradeHud?.onBlock(value);
       // 2026-11-10: a blocked friend's whisper, and another's with /whisperrefuse (OnWhisper, DPClient.cpp:11790-11831, :11899-11903)
       if (value.type === 'whisper' && this.friendHud?.dropWhisper(value) === true) continue;
@@ -2503,12 +2512,17 @@ export class WorldScreen {
     // custom (owner 2026-11-20): the Redeem Code window, on its own site API (the session cookie the lobby's login made);
     // the session is touched every 30 minutes while in the world, so it does not run out after 60 idle minutes
     const codeApi = new VipApi((...args) => globalThis.fetch(...args), newRequestId);
+    this.codeMailTaker = new CodeMailTaker({
+      send: (bytes) => this.session.sendBankMail(bytes),
+      freeSlots: () => (this.own === undefined ? 0 : freeBagSlots(this.own)),
+      say: (text) => this.chatWindow?.append('system', '', text, undefined, this.data?.texts.get('TID_MAIL_RECEIVE')?.color),
+    });
     this.redeemCodeWindow = new RedeemCodeWindow({
       api: codeApi,
       account: () => this.entry.account,
       playerId: () => this.entry.character.playerId,
       freeSlots: () => (this.own === undefined ? 0 : freeBagSlots(this.own)),
-      expectMails: () => {},
+      expectMails: (useId) => this.codeMailTaker?.expect(useId, performance.now()),
       newRequestId,
       now: () => Date.now(),
       item: (itemId) => {
@@ -4232,6 +4246,7 @@ this.follow(world, stage);
     this.housingHud?.update(); // 2026-11-15: and the Housing list's times
     this.guildHouseHud?.update(); // 2026-11-15: the guild house's time left, its storage and strip
     this.postHud?.update();
+    this.codeMailTaker?.update(performance.now()); // custom (owner 2026-11-20): asks the mailbox after a redeem
     // the new-mail notice follows the own MODE_MAILBOX (ADD_OBJ, MODIFYMODE)
     const mailOn = ((self?.added.player?.mode ?? 0) & Mode.MAILBOX) !== 0;
     if (this.mailNotice !== undefined && this.mailNotice.shown !== mailOn) this.mailNotice.set(mailOn);
@@ -5614,6 +5629,8 @@ this.follow(world, stage);
     if (line !== null) this.chatWindow?.append('system', '', line.text, undefined, line.color);
     const mail = text('TID_MAIL_RECEIVE');
     if ((mode & Mode.MAILBOX) !== 0 && mail !== undefined) this.chatWindow?.append('system', '', mail.text, undefined, line?.color ?? text('TID_ADMIN_NORMAL')?.color);
+    // custom (owner 2026-11-20): a code's mails may be the new ones: the mailbox is asked for them
+    if ((mode & Mode.MAILBOX) !== 0) this.codeMailTaker?.mailNotice(performance.now());
   }
 
   /** The members changed: every name tag's colour again (`COLOR_PARTY`). */
