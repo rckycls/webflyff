@@ -4031,7 +4031,7 @@ fieldset:disabled .btn {
   .hud-craft-card { --panel-width: 330px; }
   .hud-craft-card > .hud-window-body {
     display: grid; grid-template-columns: auto repeat(5, 40px); gap: 6px; align-items: center; justify-content: center;
-    grid-template-areas: 'sl ss . . . .' 'cl c1 c2 c3 c4 c5' 'in in in in in in' 'ac ac ac ac ac ac' 'ca ca ca ca ca ca' 're re re re re re';
+    grid-template-areas: 'sl ss . . . .' 'cl c1 c2 c3 c4 c5' 'in in in in ca ca' 'ac ac ac ac ac ac' 're re re re re re';
   }
   .hud-craft-card [data-control="WIDC_ST_STONE"] { grid-area: sl; }
   .hud-craft-card [data-control="WIDC_SLOT_STONE"] { grid-area: ss; }
@@ -4044,7 +4044,7 @@ fieldset:disabled .btn {
   .hud-craft-card [data-control="WIDC_INFO"] { grid-area: in; width: auto !important; height: auto !important; font-size: 13px; }
   .hud-craft-card [data-control="WIDC_ACTIONS"] { grid-area: ac; width: auto !important; height: auto !important; flex-wrap: wrap; font-size: 12px; }
   .hud-craft-card [data-control="WIDC_CANCEL"] { grid-area: ca; }
-  .hud-craft-card [data-control="WIDC_RESULT"] { grid-area: re; width: auto !important; height: 112px !important; overflow: hidden; }
+  .hud-craft-card [data-control="WIDC_RESULT"] { grid-area: re; width: auto !important; height: 84px !important; overflow: hidden; }
   .hud-craft-card .auto-word { min-width: 30px; height: 30px; font-size: 12px; line-height: 28px; }
   .hud-craft-card .craft-card-go { min-width: 80px; }
   .hud-craft-card .craft-card-bulk { width: 36px; }

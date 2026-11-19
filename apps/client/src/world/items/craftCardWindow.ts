@@ -214,7 +214,7 @@ export class CraftCardWindow extends NpcWindow {
     box.className = 'auto-v15-check';
     box.style.backgroundImage = themeUrl(this.host.ui.art, 'ButtCheck.bmp');
     const label = doc.createElement('span');
-    label.textContent = 'Stop at the first success';
+    label.textContent = 'Stop at first success';
     stop.append(box, label);
     stop.addEventListener('click', () => { this.stopOnSuccess = !this.stopOnSuccess; this.draw(); });
     window.setContent('WIDC_ACTIONS', craft, bulk, stop);
@@ -257,7 +257,7 @@ export class CraftCardWindow extends NpcWindow {
     chance.textContent = `Chance: ${this.chance()}%`;
     const makes = doc.createElement('div');
     makes.className = 'craft-card-makes';
-    makes.textContent = `Makes: ${kind === null ? 'a random 7% suit card or A weapon card' : KIND_MAKES[kind]}`;
+    makes.textContent = `Makes: ${kind === null ? 'a random 7% or A card' : KIND_MAKES[kind]}`;
     window.setContent('WIDC_INFO', chance, makes);
     this.resultBox?.replaceChildren(...this.resultNodes());
     if (this.craftButton) this.craftButton.disabled = this.sent;
