@@ -44,6 +44,8 @@ export const AppId = {
   PETFILTER: 9003,
   /** custom (owner 2026-11-19): the Awaken window, the client's own id. */
   AWAKEN: 9004,
+  /** custom (owner 2026-11-19): the Teleport window, the client's own id (9004 is the Awaken window's). */
+  TELEPORT: 9005,
 } as const;
 
 /**
@@ -114,6 +116,9 @@ export const APPLETS: ReadonlyMap<number, Applet> = new Map([
   // custom (owner 2026-11-19): the Awaken window, from the Start menu, no hotkey; its icon the Scroll of Awakening's own
   // (Itm_SysSysScrAwake.dds, already converted: an asset key `themeKey` passes through)
   [AppId.AWAKEN, applet('APP_AWAKEN', 'ui/item/itm_syssysscrawake.png', 'Awaken')],
+  // custom (owner 2026-11-19): the Teleport window, in the Start menu's Extras folder, no hotkey; its icon the Blinkwing's own
+  // (itm_SysBliBliBlinkW.dds, already converted: an asset key `themeKey` passes through)
+  [AppId.TELEPORT, applet('APP_TELEPORT', 'ui/item/itm_sysblibliblinkw.png', 'Teleport')],
 ]);
 
 /** The text `text` names: the catalog's for a TID (`texts`, '' for one it lacks), the C++'s own otherwise. */

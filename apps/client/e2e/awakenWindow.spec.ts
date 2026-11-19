@@ -48,6 +48,7 @@ test('Awaken: the Start menu opens it; a suit and a scroll; Yes with Don\'t ask 
   const gateway = await playGateway(page, s);
   await enterFlaris(page);
   await page.getByRole('button', { name: 'Start' }).click();
+  await page.getByRole('menuitem', { name: 'Extras', exact: true }).click(); // 2026-11-19: Awaken is in the Extras folder
   await page.getByRole('menuitem', { name: 'Awaken' }).click();
   const win = page.locator('.hud-awaken');
   await expect(win).toBeVisible();

@@ -196,6 +196,7 @@ import { ItemUse } from './items/itemUse';
 // custom (owner 2026-11-16): the Pet Filter (the Wakazaki pet filter)
 import { PET_FILTER_NONE, loadPetFilter, petFilterBlocks, savePetFilter } from './items/petFilter';
 import { PetFilterWindow } from './hud/petFilterWindow';
+import { TeleportWindow } from './hud/teleportWindow'; // custom (owner 2026-11-19)
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { UpgradeCursor } from './items/upgradeCursor';
 import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
@@ -811,6 +812,8 @@ export class WorldScreen {
    */
   private petFilter = PET_FILTER_NONE;
   private petFilterWindow: PetFilterWindow | undefined;
+  /** custom (owner 2026-11-19): the Teleport window, from the Start menu's Extras folder (hud/teleportWindow.ts). */
+  private teleportWindow: TeleportWindow | undefined;
   private petFilterSent = PET_FILTER_NONE;
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
@@ -2476,6 +2479,14 @@ export class WorldScreen {
       savePetFilter(autoPlayStorage(), mask);
       this.sendPetFilter(mask);
     };
+    // custom (owner 2026-11-19): the Teleport window: its own lines in the colour of V15's refusals; the World checks it all again
+    this.teleportWindow = new TeleportWindow({
+      authorization: () => this.world?.self()?.added.player?.authorization ?? 0,
+      gold: () => this.own?.gold ?? 0,
+      say: (text) => this.hud?.messages.add(text, this.data?.texts.get('TID_GAME_LACKMONEY')?.color ?? 0xffffffff),
+      sayTid: (tid) => this.sayRefusal({ kind: 'say', tid }),
+      send: (place) => this.session.sendTeleportWindow(place),
+    }, this.hudArt!, doc);
     this.autoButton = new AutoButton(this.autoPlay!, () => {
       if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
     }, doc);
@@ -2913,6 +2924,7 @@ export class WorldScreen {
       this.motionWindow.frame.element, // 2026-11-14
       this.autoPlayWindow.frame.element, this.autoButton.element, this.saverScreen.element, // custom (owner 2026-11-15)
       this.petFilterWindow.element, // custom (owner 2026-11-16)
+      this.teleportWindow.element, // custom (owner 2026-11-19)
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
@@ -4255,6 +4267,7 @@ this.follow(world, stage);
     if (window === 'housing') { this.housingHud?.toggle(); return; }
     // 2026-11-15: APP_GH_FURNITURE_STORAGE, R (FuncApplet.cpp:180): the guild's Furniture Storage
     if (window === 'guildFurniture') { this.guildHouseHud?.toggleStorage(); return; }
+    if (window === 'teleport') { this.teleportWindow?.toggle(); return; } // custom (owner 2026-11-19): the Teleport window
     if (window === 'couple') { this.social?.coupleWindow.toggle(); return; } // 2026-11-15 (social)
     // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window, from the Start menu and the icons
     if (window === 'siegeRanking') { this.guildCombatHud?.siegeRanking.toggle(); return; }

@@ -22,7 +22,7 @@ const SHORTCUTS = [
 ] as const;
 const LABELS = [...SHORTCUTS.map(([label]) => label), 'Stats'];
 /** 2026-11-17 (owner): the Start-menu lines of the client's own windows and their own icons (src/icons/). */
-const OWN_ICON_LINES =[['Siege Ranking', 'icon_siegeranking'], ['Auto Play', 'icon_autoplay'], ['Pet Filter', 'icon_petfilter']] as const;
+const OWN_ICON_LINES =[['Siege Ranking', 'icon_siegeranking'], ['Auto Play', 'icon_autoplay']] as const; // 2026-11-19: the Pet Filter's in Extras
 
 type Box = { x: number; y: number; width: number; height: number };
 /** Whether two boxes share any area. */
@@ -102,6 +102,10 @@ test('top-right shortcuts: the important Start-menu icons in two rows of five on
       await expect(page.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
     }
     await page.getByRole('menu').screenshot({ path: info.outputPath('start-menu-desktop.png') });
+    // 2026-11-19 (custom): the Pet Filter's line, with its own icon, is in the Extras folder
+    await page.getByRole('menuitem', { name: 'Extras', exact: true }).click();
+    await expect(page.getByRole('menu', { name: 'Extras' }).getByRole('menuitem', { name: 'Pet Filter' }).locator('.hud-menu-icon'))
+      .toHaveCSS('background-image', /\/icons\/icon_petfilter\.png/);
     await page.getByRole('menuitem', { name: 'Siege Ranking' }).click();
     await expect(page.locator('.hud-sr')).toBeVisible();
     await page.screenshot({ path: info.outputPath('top-desktop.png'), clip: top });

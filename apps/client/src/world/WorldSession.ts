@@ -25,6 +25,7 @@ import {
   encodeUltimateTransWeapon,
 } from '@flyffweb/protocol';
 import { encodeCraftCard } from '@flyffweb/protocol'; // custom (owner 2026-11-19): Bozman's Craft Card
+import { encodeTeleportWindow } from '@flyffweb/protocol'; // custom (owner 2026-11-19): the Teleport window
 import type { NpcWindowPacket } from './items/npcWindowKit';
 import {
   encodeAddPartyMember, encodeBlock, encodeChangeTroup, encodePartyChangeLeader, encodePartyExpMode, encodePartyItemMode,
@@ -204,6 +205,8 @@ export class WorldSession {
   sendArenaExit(): void { this.playingCache()?.send(encodeArenaExit()); }
   /** 2026-11-10: the Forsaken Tower's OK (`SendTeleportToHeavenTower( nFloor )`, `DPClient.cpp:17828-17835`), floors 1-5. */
   sendHeavenTowerTeleport(floor: number): void { this.playingCache()?.send(encodeHeavenTowerTeleport(floor)); }
+  /** custom (owner 2026-11-19): the Teleport window's place number (a patched World server; others ignore it). */
+  sendTeleportWindow(place: number): void { this.playingCache()?.send(encodeTeleportWindow(place)); }
   /**
    * 2026-11-14 (the Motion window, world/motion.ts): sit down or stand up (`SendMotion`, an OBJMSG), cheer a player
    * (`SendCheering`), the town escape (`SendDoEscape`) and a proposal (`SendPropose`).
