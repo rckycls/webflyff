@@ -18,9 +18,11 @@ export interface UiArt {
 
 /**
  * The logical key of a picture of Client/Theme/Default (`MakePath( DIR_THEME, name )`): `ui/<web name of the file name
- * without its extension>.png`, as the UI stage writes it (`iconKeyOf`, tools/convert/src/output/keys.ts).
+ * without its extension>.png`, as the UI stage writes it (`iconKeyOf`, tools/convert/src/output/keys.ts). 2026-11-19: a
+ * key that is one already (`ui/...png`, an item's icon) is kept, so an applet can show an item's picture (the Awaken window).
  */
 export function themeKey(file: string): string {
+  if (/^ui\/[a-z0-9._/-]+\.png$/.test(file)) return file;
   return `ui/${webName(file.replace(/\.[^.]*$/, ''))}.png`;
 }
 

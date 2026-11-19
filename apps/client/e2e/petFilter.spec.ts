@@ -18,6 +18,7 @@ const masks = (gateway: Awaited<ReturnType<typeof playGateway>>): number[] =>
 
 async function openFromStart(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Start' }).click();
+  await page.getByRole('menuitem', { name: 'Extras', exact: true }).click(); // 2026-11-19: in the Extras folder
   await page.getByRole('menuitem', { name: 'Pet Filter' }).click();
   await expect(page.locator('.hud-pet-filter')).toBeVisible();
 }

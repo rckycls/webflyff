@@ -253,7 +253,7 @@ test.describe('landscape (spec §3.10)', () => {
       expect(right[0]!.top).toBeCloseTo(left[0]!.top, 1);
       expect(right[0]!.left).toBeGreaterThan(left[0]!.left + 100);
       // 2026-11-17 (owner): the client's own windows show FlyffWeb's own icons (src/icons/), framed as Client/Icon's
-      for (const [name, file] of [['Siege Ranking', 'icon_siegeranking'], ['Auto Play', 'icon_autoplay'], ['Pet Filter', 'icon_petfilter']]) {
+      for (const [name, file] of [['Siege Ranking', 'icon_siegeranking'], ['Auto Play', 'icon_autoplay']]) { // 2026-11-19: Pet Filter in Extras
         await expect(menu.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
       }
       await menu.screenshot({ path: info.outputPath(`start-menu-${size.width}x${size.height}.png`) });
@@ -264,6 +264,13 @@ test.describe('landscape (spec §3.10)', () => {
       await expectOnScreen(submenu, `the Communication sub-menu at ${size.width} x ${size.height}`, await barTop(page));
       await expect(submenu.getByRole('menuitem')).toHaveText(['Chatting', 'Messenger', 'Couple'].map((name) => new RegExp(name)));
       await page.screenshot({ path: info.outputPath(`start-menu-communication-${size.width}x${size.height}.png`) });
+      // 2026-11-19 (custom): the Extras folder: the Pet Filter (its own icon) and the Teleport window, on the screen
+      await page.getByRole('menuitem', { name: 'Extras', exact: true }).click();
+      const extras = page.getByRole('menu', { name: 'Extras' });
+      await expect(extras).toBeVisible();
+      await expectOnScreen(extras, `the Extras sub-menu at ${size.width} x ${size.height}`, await barTop(page));
+      await expect(extras.getByRole('menuitem')).toHaveText([/Pet Filter/, /Teleport/]);
+      await expect(extras.getByRole('menuitem', { name: 'Pet Filter' }).locator('.hud-menu-icon')).toHaveCSS('background-image', /\/icons\/icon_petfilter\.png/);
       await page.getByRole('button', { name: 'Start' }).click();
       await expect(menu).toBeHidden();
     }

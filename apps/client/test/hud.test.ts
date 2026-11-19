@@ -913,8 +913,8 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.menuOpen).toBe(true);
     // 2026-11-18 (owner, "Start menu is overflowing"): V15's Communication and Community folders, their lines in sub-menus
     const items = [...menu.querySelectorAll<HTMLButtonElement>(':scope > [role="menuitem"]')];
-    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Backpack', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Pet Filter', 'Option', 'Log out']);
-    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Backpack', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Pet Filter', 'Option', 'Log out']);
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Backpack', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Extras', 'Option', 'Log out']);
+    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Backpack', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Communication', 'Community', 'Siege Ranking', 'Auto Play', 'Extras', 'Option', 'Log out']);
     // every line has its window (the skill window's, milestone 2's, too)
     expect(items.map((item) => item.disabled)).toEqual(Array.from({ length: 18 }, () => false));
     // the picture holds nineteen lines (V15's); a new window goes in a folder past that (2026-11-18)
@@ -952,7 +952,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
       ['10px', '402px', '162px', '22px'],
       ['10px', '424px', '162px', '22px'],
     ]);
-    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'B', 'Y', '', 'Q', 'O', 'M', 'N', '', '', '', '', 'U', '', '']);
+    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'B', 'Y', '', 'Q', 'O', 'M', 'N', '', '', '', '', '', '', '']); // 2026-11-19: U (Pet Filter) is in the Extras folder now
     // the menu stands on the bar, its own scale
     expect(menu.style.bottom).toBe('48px');
     // a folder's line (icon_Folder.dds) shows its sub-menu beside it, its applets' lines with their icons and hotkeys; the
@@ -981,9 +981,24 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(calls).toEqual(['open messenger']);
     expect(menu.hidden).toBe(true);
     calls.length = 0;
+    // custom (owner 2026-11-19): the Extras folder holds the Pet Filter (U) and the Teleport window (no hotkey)
+    start.click();
+    const extras = items[15]!;
+    expect(extras.getAttribute('aria-label')).toBe('Extras');
+    expect(extras.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_folder.png');
+    extras.click();
+    const extrasMenu = menu.querySelector<HTMLElement>('.hud-taskbar-submenu[aria-label="Extras"]')!;
+    expect(extrasMenu.hidden).toBe(false);
+    const extrasItems = [...extrasMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    expect(extrasItems.map((item) => item.getAttribute('aria-label'))).toEqual(['Pet Filter', 'Teleport']);
+    expect(extrasItems.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['U', '']);
+    expect(extrasItems[1]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/item/itm_sysblibliblinkw.png');
+    extrasItems[1]!.click();
+    expect(calls).toEqual(['open teleport']);
+    calls.length = 0;
     start.click();
     expect(submenu.hidden).toBe(true);
-    items[17]!.click(); // Log out, after the custom Auto Play and Pet Filter lines
+    items[17]!.click(); // Log out, after the custom Auto Play line and the Extras folder
     expect(calls).toEqual(['logOut']);
     expect(menu.hidden).toBe(true);
     // Start again opens it; Status opens the status window and closes the menu; Start twice, or a press elsewhere, closes it
@@ -998,7 +1013,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     document.body.dispatchEvent(pointer('pointerdown', 400, 100));
     expect(bar.menuOpen).toBe(false);
     // its owner hears each opening and closing (the world screen hides the joystick meanwhile; 2026-11-18: Messenger's too)
-    expect(changes).toEqual([true, false, true, false, true, false, true, false, true, false]);
+    expect(changes).toEqual([true, false, true, false, true, false, true, false, true, false, true, false]); // 2026-11-19: and the Extras folder's Teleport
   });
 
   it('a press on an applet with a window in Piece 4 opens it; the other applets do nothing; a non-applet goes to the owner', () => {
