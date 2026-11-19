@@ -2517,6 +2517,8 @@ export class WorldScreen {
       freeSlots: () => (this.own === undefined ? 0 : freeBagSlots(this.own)),
       say: (text) => this.chatWindow?.append('system', '', text, undefined, this.data?.texts.get('TID_MAIL_RECEIVE')?.color),
     });
+    // uses redeemed before a log out and in: their mails may be waiting, or still on the way
+    this.codeMailTaker.resume(performance.now());
     this.redeemCodeWindow = new RedeemCodeWindow({
       api: codeApi,
       account: () => this.entry.account,
@@ -2525,6 +2527,7 @@ export class WorldScreen {
       expectMails: (useId) => this.codeMailTaker?.expect(useId, performance.now()),
       newRequestId,
       now: () => Date.now(),
+      say: (text) => this.chatWindow?.append('system', '', text, undefined, this.data?.texts.get('TID_MAIL_RECEIVE')?.color),
       item: (itemId) => {
         const prop = this.data?.itemProps.get(itemId);
         return { name: prop?.name || `Item ${itemId}`, iconUrl: prop?.icon ? this.hudArt!.url(prop.icon) : null };
@@ -4250,6 +4253,8 @@ this.follow(world, stage);
     // the new-mail notice follows the own MODE_MAILBOX (ADD_OBJ, MODIFYMODE)
     const mailOn = ((self?.added.player?.mode ?? 0) & Mode.MAILBOX) !== 0;
     if (this.mailNotice !== undefined && this.mailNotice.shown !== mailOn) this.mailNotice.set(mailOn);
+    // custom (owner 2026-11-20): the mode turning on (at entry too, where no MODIFYMODE comes) asks for code mails
+    this.codeMailTaker?.mailMode(mailOn, performance.now());
     if (this.questTracker !== undefined || this.questWindow !== undefined) {
       const questState = this.questState();
       this.questTracker?.update(questState);
@@ -5629,8 +5634,6 @@ this.follow(world, stage);
     if (line !== null) this.chatWindow?.append('system', '', line.text, undefined, line.color);
     const mail = text('TID_MAIL_RECEIVE');
     if ((mode & Mode.MAILBOX) !== 0 && mail !== undefined) this.chatWindow?.append('system', '', mail.text, undefined, line?.color ?? text('TID_ADMIN_NORMAL')?.color);
-    // custom (owner 2026-11-20): a code's mails may be the new ones: the mailbox is asked for them
-    if ((mode & Mode.MAILBOX) !== 0) this.codeMailTaker?.mailNotice(performance.now());
   }
 
   /** The members changed: every name tag's colour again (`COLOR_PARTY`). */

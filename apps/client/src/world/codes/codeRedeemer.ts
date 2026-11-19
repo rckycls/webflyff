@@ -40,11 +40,14 @@ export const CODE_TEXTS = {
 
 const fill = (text: string, values: Record<string, string | number>): string => text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''));
 
-/** `27 Nov 2026`. */
+/** `27 Nov 2026`, in the player's own time zone (the final review: a UTC date reads a day early in Manila). */
 export function dayText(iso: string): string {
   const ms = Date.parse(iso);
-  return Number.isFinite(ms) ? new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : iso;
+  return Number.isFinite(ms) ? new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : iso;
 }
+
+/** A code as the website keeps it (spaces and dashes dropped, capitals). */
+const keyOf = (text: string): string => text.replace(/[\s-]+/g, '').toUpperCase();
 
 /** The website's rule (apps/web/src/codes/codeKeys.ts normalizeKey): 4 to 32 letters and digits once spaces and dashes are dropped. */
 export function codeFormatOk(text: string): boolean {
@@ -78,6 +81,8 @@ export interface CodeRedeemerHost {
   expectMails(useId: number): void;
   newRequestId(): string;
   now(): number;
+  /** One chat line: the done lines go there too, so a window closed meanwhile loses nothing (the final review). */
+  say(text: string): void;
 }
 
 export type CodeView =
@@ -110,6 +115,8 @@ export class CodeRedeemer {
   private ready = false;
   /** What a session loss stopped, done again after the password. */
   private resume: (() => Promise<void>) | null = null;
+  /** A Redeem press whose answer was lost (no answer, or a server error): its code and request id. */
+  private lostPress: { key: string; requestId: string; confirm: boolean } | null = null;
 
   constructor(private readonly host: CodeRedeemerHost, private readonly onChange: (view: CodeView) => void) {}
 
@@ -175,6 +182,16 @@ export class CodeRedeemer {
     const answer = await this.call(() => this.host.api.codeCheck(this.code), () => this.check(text));
     if (answer === undefined) return;
     if (!answer.ok) {
+      const lost = this.lostPress;
+      if (answer.error === 'mine' && lost !== null && lost.key === keyOf(this.code)) {
+        // the final review: a Redeem whose answer was lost did use the code: its first answer, not "already used"
+        const first = await this.call(() => this.host.api.codeRedeem(this.code, this.host.playerId(), lost.requestId, lost.confirm), () => this.check(text));
+        if (first === undefined) return;
+        if (first.ok) {
+          this.finish(first.value);
+          return;
+        }
+      }
       this.show({ step: 'enter', message: this.refusalText(answer) });
       return;
     }
@@ -209,7 +226,9 @@ export class CodeRedeemer {
         return;
       }
       if (answer.error === 'unreachable' || answer.error === 'server') {
-        this.showOffer(view.confirming, this.refusalText(answer)); // the same request id on the next press
+        // the same request id on the next press; and a Check of the same code asks for this press's answer again
+        this.lostPress = { key: keyOf(this.code), requestId, confirm: check.replaces };
+        this.showOffer(view.confirming, this.refusalText(answer));
         return;
       }
       this.offerCheck = null;
@@ -217,14 +236,20 @@ export class CodeRedeemer {
       this.show({ step: 'enter', message: answer.error === 'character' ? CODE_TEXTS.character : this.refusalText(answer) });
       return;
     }
-    const done = answer.value;
+    this.finish(answer.value);
+  }
+
+  /** A used code: the done lines (in the window and the chat), and its mails expected. */
+  private finish(done: CodeRedeemView): void {
     const lines: string[] = [];
     if (done.offer.items.length > 0) {
       lines.push(CODE_TEXTS.done);
       this.host.expectMails(done.useId);
     }
     if (done.offer.vipLevel > 0 && done.vip !== null) lines.push(fill(CODE_TEXTS.doneVip, { level: done.vip.level, end: dayText(done.vip.endsAt) }));
+    for (const line of lines) this.host.say(line);
     this.requestId = null;
+    this.lostPress = null;
     this.show({ step: 'done', lines });
   }
 

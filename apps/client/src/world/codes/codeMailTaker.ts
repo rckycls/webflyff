@@ -20,6 +20,8 @@ const FIRST_ASK_MS = 20_000;
 const ASK_EVERY_MS = 20_000;
 const ASK_FOR_MS = 3 * 60_000;
 const WAIT_ANSWER_MS = 5_000;
+/** A world that starts with uses still expected asks 5 seconds in (the entry's own packets first). */
+const RESUME_ASK_MS = 5_000;
 
 export interface CodeMailHost {
   send(bytes: Uint8Array): void;
@@ -50,6 +52,25 @@ export class CodeMailTaker {
 
   mailNotice(now: number): void {
     if (expectedCodeUses.size > 0) this.ask(now);
+  }
+
+  /** Whether the own MODE_MAILBOX was on at the last frame: a new world starts with it off. */
+  private mailOn = false;
+
+  /**
+   * The own MODE_MAILBOX each frame (the final review, 2026-11-20): turning on asks the mailbox. The World sets it at
+   * entry without a MODIFYMODE (AdjustMailboxState), so the code mails that came during a log out and in are found too.
+   */
+  mailMode(on: boolean, now: number): void {
+    if (on && !this.mailOn) this.mailNotice(now);
+    this.mailOn = on;
+  }
+
+  /** A world starts while uses are still expected (redeemed before a log out and in): ask again for a while. */
+  resume(now: number): void {
+    if (expectedCodeUses.size === 0) return;
+    this.asksUntil = now + ASK_FOR_MS;
+    this.nextAsk = now + RESUME_ASK_MS;
   }
 
   update(now: number): void {

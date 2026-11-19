@@ -14,7 +14,7 @@ import { MADRIGAL, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, playGateway, self,
 test.describe.configure({ timeout: 120_000 });
 
 const WOODEN_SWORD = 21;
-const OFFER = { codeId: 3, label: 'Launch', vipLevel: 2, vipDays: 7, expiresAt: '2026-12-15T00:00:00Z', items: [{ itemId: WOODEN_SWORD, count: 1 }] };
+const OFFER = { codeId: 3, label: 'Launch', vipLevel: 2, vipDays: 7, expiresAt: '2026-12-15T12:00:00Z', items: [{ itemId: WOODEN_SWORD, count: 1 }] };
 
 function scriptOf(): WorldScript {
   const own = newVagrantOwn();
@@ -63,7 +63,7 @@ test('Redeem Code: Extras opens it; Check, Redeem, and the code mail goes into t
   await page.route('**/api/codes/check', (route) => route.fulfill({ json: { ok: true, offer: OFFER, vip: null, replaces: false } }));
   await page.route('**/api/codes/redeem', (route) => {
     redeemed.push(route.request().postDataJSON());
-    return route.fulfill({ json: { ok: true, useId: 77, offer: OFFER, vip: { level: 2, endsAt: '2026-11-27T00:00:00Z' }, repeat: false } });
+    return route.fulfill({ json: { ok: true, useId: 77, offer: OFFER, vip: { level: 2, endsAt: '2026-11-27T12:00:00Z' }, repeat: false } });
   });
   const script = scriptOf();
   const gateway = await playGateway(page, script);
@@ -102,7 +102,7 @@ test('Redeem Code: a lost session asks for the password, then goes on; a higher 
     : route.fulfill({ status: 401, json: { error: 'session' } })));
   await page.route('**/api/account/login', (route) => { loggedIn = true; return route.fulfill({ json: { account: 'tester1', csrf: 'tok' } }); });
   await page.route('**/api/codes/check', (route) => (loggedIn
-    ? route.fulfill({ status: 409, json: { error: 'lower_vip', offer: { ...OFFER, vipLevel: 1 }, vip: { level: 4, endsAt: '2026-11-30T00:00:00Z' } } })
+    ? route.fulfill({ status: 409, json: { error: 'lower_vip', offer: { ...OFFER, vipLevel: 1 }, vip: { level: 4, endsAt: '2026-11-30T12:00:00Z' } } })
     : route.fulfill({ status: 401, json: { error: 'session' } })));
   await playGateway(page, scriptOf());
   await enterFlaris(page);

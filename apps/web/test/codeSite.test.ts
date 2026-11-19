@@ -208,6 +208,28 @@ it('answers ok even when the mail cannot be written now (the VIP job retries it)
   expect((await redeem(port, headers, 'WELCOME2026')).status).toBe(200);
 });
 
+it('answers before the mail is written (a slow mail write never turns a used code into "can\'t reach")', async () => {
+  let finish = () => {};
+  const { port, make } = await start({ deliver: () => new Promise<void>((resolve) => { finish = resolve; }) });
+  await make();
+  const headers = await logIn(port);
+  const answer = await Promise.race([
+    redeem(port, headers, 'WELCOME2026'),
+    new Promise<Reply>((resolve) => setTimeout(() => resolve({ status: 0, body: 'no answer' }), 2000)),
+  ]);
+  finish();
+  expect(answer).toMatchObject({ status: 200, body: { ok: true } });
+});
+
+it('limits every redeem press of an account, refused ones too, to 30 an hour', async () => {
+  const { port, make } = await start();
+  await make();
+  const headers = await logIn(port);
+  expect((await redeem(port, headers, 'WELCOME2026')).status).toBe(200);
+  for (let i = 0; i < 29; i++) expect((await redeem(port, headers, 'WELCOME2026')).body.error).toBe('mine');
+  expect(await redeem(port, headers, 'WELCOME2026')).toEqual({ status: 429, body: { error: 'too_many' } });
+});
+
 it('refuses a bad body', async () => {
   const { port } = await start();
   const headers = await logIn(port);

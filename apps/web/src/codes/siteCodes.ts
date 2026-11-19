@@ -9,7 +9,8 @@
 // Refusals: `400 {error:'format'}` (not 4-32 letters and digits once spaces and dashes are dropped; no try counted),
 // `400 {error:'invalid', field}`, `404 {error:'unknown'}`, `409 {error, offer, vip}` (expired, inactive, claimed,
 // key_used, mine, not_listed, lower_vip, confirm, character), `429 {error:'too_many'}` (10 wrong tries an hour per
-// account, 30 per address: unknown and not_listed count; 30 redeems an hour per account), `413 {error:'size'}`.
+// account, 30 per address: unknown and not_listed count; 30 redeem presses an hour per account, refused ones too, a
+// repeat not), `413 {error:'size'}`. The answer goes before the mail is written (the final review).
 //
 // One log line each: `code <address> <account> <code id or -> <what>`. Never the code text.
 
@@ -101,26 +102,28 @@ export function codeRoutes(deps: CodeRouteDeps): CodeRoutes {
     const idPlayer = String(character).padStart(7, '0');
     const characterName = await store.character(account, idPlayer);
     if (characterName === undefined) {
+      deps.redeemsByAccount.add(account); // every press counts but a repeat (the final review: no free hammering)
       log.info(`${who} - character`);
       send(res, 409, { error: 'character', offer: null, vip: null });
       return true;
     }
     const answer = await store.redeem({ account, key, requestId: requestId as string, idPlayer, characterName, address, confirm: confirm as boolean });
     const codeId = answer.offer?.codeId ?? '-';
+    if (!(answer.ok && answer.repeat)) deps.redeemsByAccount.add(account);
     if (!answer.ok) {
       refuse(answer.refused, account, address, `${who} ${codeId} `, res, answer.offer, answer.vip);
       return true;
     }
     log.info(`${who} ${codeId} ${answer.repeat ? 'repeat' : 'ok'}`);
-    if (!answer.repeat) {
-      deps.redeemsByAccount.add(account);
-      try {
-        await deps.deliver(answer.useId);
-      } catch (error) {
-        log.warn(`code: use ${answer.useId} not mailed now (the VIP job tries again): ${message(error)}`);
-      }
-    }
+    // the answer first: a slow mail write must never turn a used code into "can't reach" (the final review); the
+    // mail follows at once, and the VIP job writes it within 5 minutes when this fails
     send(res, 200, { ok: true, useId: answer.useId, offer: answer.offer, vip: answer.vip, repeat: answer.repeat });
+    if (!answer.repeat) {
+      const useId = answer.useId;
+      void Promise.resolve().then(() => deps.deliver(useId)).catch((error: unknown) => {
+        log.warn(`code: use ${useId} not mailed now (the VIP job tries again): ${message(error)}`);
+      });
+    }
     return true;
   };
 

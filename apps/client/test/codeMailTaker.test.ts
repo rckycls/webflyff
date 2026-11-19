@@ -91,3 +91,32 @@ it('forgets a use once its mails were taken, and keeps it across a new taker (a 
   again.taker.handle({ type: 'mailBox', receiverId: 1, mails: [mail(50, 'Code reward #9')] }, 0);
   expect(again.takes()).toEqual([encodeQueryGetMailItem(50)]);
 });
+
+it('asks the mailbox when the mail mode turns on, the first frame of a world included (the final review)', () => {
+  expectedCodeUses.add(7); // redeemed before a log out and in
+  const { taker, asks } = setUp();
+  taker.mailMode(true, 0);
+  expect(asks()).toBe(1);
+  taker.mailMode(true, 100);
+  expect(asks()).toBe(1);
+  taker.mailMode(false, 200);
+  taker.mailMode(true, 300);
+  expect(asks()).toBe(2);
+});
+
+it('goes on asking for uses still expected when a world starts', () => {
+  expectedCodeUses.add(7);
+  const { taker, asks } = setUp();
+  taker.resume(0);
+  taker.update(4_000);
+  expect(asks()).toBe(0);
+  taker.update(5_000);
+  expect(asks()).toBe(1);
+  taker.update(25_000);
+  expect(asks()).toBe(2);
+  const quiet = setUp();
+  expectedCodeUses.clear();
+  quiet.taker.resume(0);
+  quiet.taker.update(5_000);
+  expect(quiet.asks()).toBe(0);
+});

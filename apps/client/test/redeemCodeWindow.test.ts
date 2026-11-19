@@ -10,7 +10,7 @@ import type { RedeemCodeHost } from '../src/world/codes/redeemCodeWindow';
 import type { UiArt } from '../src/world/hud/art';
 
 const art: UiArt = { url: (key) => `/assets/${key}`, sheets: null };
-const OFFER: CodeOfferView = { codeId: 3, label: 'Launch', vipLevel: 2, vipDays: 7, expiresAt: '2026-12-15T00:00:00Z', items: [{ itemId: 10206, count: 5 }, { itemId: 4805, count: 2 }] };
+const OFFER: CodeOfferView = { codeId: 3, label: 'Launch', vipLevel: 2, vipDays: 7, expiresAt: '2026-12-15T12:00:00Z', items: [{ itemId: 10206, count: 5 }, { itemId: 4805, count: 2 }] };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 afterEach(() => {
@@ -23,12 +23,12 @@ function opened(api: Partial<CodeApiLike> = {}, free = 14) {
     session: vi.fn(async () => 'tester1'),
     login: vi.fn(async () => ({ ok: true, value: 'tester1' }) as Answer<string>),
     codeCheck: vi.fn(async () => ({ ok: true, value: { offer: OFFER, vip: null, replaces: false } }) as Answer<CodeCheckView>),
-    codeRedeem: vi.fn(async () => ({ ok: true, value: { useId: 9, offer: OFFER, vip: { level: 2, endsAt: '2026-11-27T00:00:00Z' }, repeat: false } }) as Answer<never>),
+    codeRedeem: vi.fn(async () => ({ ok: true, value: { useId: 9, offer: OFFER, vip: { level: 2, endsAt: '2026-11-27T12:00:00Z' }, repeat: false } }) as Answer<never>),
     ...api,
   };
   const host: RedeemCodeHost = {
     api: full, account: () => 'tester1', playerId: () => 1, freeSlots: () => free, now: () => Date.UTC(2026, 10, 20),
-    expectMails: () => {}, newRequestId: () => 'press-1',
+    expectMails: () => {}, newRequestId: () => 'press-1', say: () => {},
     item: (id) => ({ name: id === 10206 ? 'Remantis Laccotte' : 'Town Blinkwing', iconUrl: `/assets/icon-${id}.png` }),
   };
   const window = new RedeemCodeWindow(host, art);
