@@ -4,9 +4,15 @@
 // pictures are deleted `deleteRejectedAfterDays` days after the rejection (checked a minute after start, then every 6 hours).
 // 2026-11-19 (VIP perks): with the admin section, the VIP job (vipPerksJob.ts) runs a minute after start, then every
 // 5 minutes: the in-game VIP letters follow the VIP list, and the gift boxes go out by in-game mail.
+// 2026-11-20 (redeem codes): with the admin section, /api/codes/* (codes/siteCodes.ts) and the code mails.
 
 import path from 'node:path';
 import { SessionBook } from '../admin/sessions';
+import { deliverOne } from '../codes/codeDelivery';
+import type { CodeAdminStore, CodeMailStore, CodeSiteStore } from '../codes/codeStore';
+import { CODE_FAILS_PER_ADDRESS_HOUR, CODE_FAILS_PER_HOUR, CODE_REDEEMS_PER_HOUR, codeRoutes } from '../codes/siteCodes';
+import type { CodeRoutes } from '../codes/siteCodes';
+import { sqlCodeAdminStore, sqlCodeMailStore, sqlCodeSiteStore } from '../codes/sqlCodeStore';
 import type { AdminConfig } from '../admin/config';
 import type { WebConfig } from '../config';
 import { HourlyLimit } from '../hourlyLimit';
@@ -38,7 +44,8 @@ type Closable<T> = T & { close(): Promise<void> };
 
 export interface StartedVip {
   routes: VipRoutes | undefined;
-  admin: { store: VipAdminStore; files: VipFiles } | undefined;
+  /** `codes` (2026-11-20): the panel's Codes view. */
+  admin: { store: VipAdminStore; files: VipFiles; codes?: CodeAdminStore } | undefined;
   close(): Promise<void>;
 }
 
@@ -47,6 +54,10 @@ export interface VipStores {
   admin(login: AdminConfig['sql']): Closable<VipAdminStore>;
   /** 2026-11-19: the VIP job's CHARACTER_01_DBF side (the SQL one when not given). */
   characters?(login: AdminConfig['sql']): Closable<VipCharacterStore>;
+  /** 2026-11-20 (redeem codes): the code stores (the SQL ones when not given). */
+  codeSite?(): Closable<CodeSiteStore>;
+  codeAdmin?(login: AdminConfig['sql']): Closable<CodeAdminStore>;
+  codeMail?(login: AdminConfig['sql']): Closable<CodeMailStore>;
 }
 
 /**
@@ -86,7 +97,27 @@ export function startVip(config: WebConfig, log: Logger, now: () => number, stor
   }
   const site = stores.site();
   const admin = config.admin === undefined ? undefined : stores.admin(config.admin.sql);
+  // 2026-11-20 (redeem codes): only with the admin section, whose login writes the code mails
+  let codeSite: Closable<CodeSiteStore> | undefined;
+  let codeAdmin: Closable<CodeAdminStore> | undefined;
+  let codeMail: Closable<CodeMailStore> | undefined;
+  let codes: CodeRoutes | undefined;
+  if (admin !== undefined && config.admin !== undefined) {
+    const login = config.admin.sql;
+    codeSite = stores.codeSite?.() ?? sqlCodeSiteStore(config.sql);
+    codeAdmin = stores.codeAdmin?.(login) ?? sqlCodeAdminStore(config.sql, login);
+    codeMail = stores.codeMail?.(login) ?? sqlCodeMailStore(config.sql, login);
+    const delivery = { admin: codeAdmin, mail: codeMail };
+    codes = codeRoutes({
+      store: codeSite, log,
+      failsByAccount: new HourlyLimit(CODE_FAILS_PER_HOUR, now),
+      failsByAddress: new HourlyLimit(CODE_FAILS_PER_ADDRESS_HOUR, now),
+      redeemsByAccount: new HourlyLimit(CODE_REDEEMS_PER_HOUR, now),
+      deliver: (useId) => deliverOne(delivery, log, useId),
+    });
+  }
   const routes = siteVipRoutes({
+    codes,
     config, vip, store: site, files, log,
     sessions: new SessionBook(now, PLAYER_SESSION_IDLE_MS, PLAYER_SESSION_MAX_MS),
     loginFailsByAddress: new HourlyLimit(LOGIN_FAILS_PER_HOUR, now),
@@ -109,16 +140,16 @@ export function startVip(config: WebConfig, log: Logger, now: () => number, stor
   if (admin !== undefined && config.admin !== undefined) {
     const login = config.admin.sql;
     characters = stores.characters?.(login) ?? sqlVipCharacterStore(config.sql, login);
-    job = new VipPerksJob({ admin, characters }, log);
+    job = new VipPerksJob({ admin, characters, ...(codeAdmin !== undefined && codeMail !== undefined ? { codes: { admin: codeAdmin, mail: codeMail } } : {}) }, log);
     job.start();
   }
   return {
     routes,
-    admin: admin === undefined ? undefined : { store: admin, files },
+    admin: admin === undefined ? undefined : { store: admin, files, ...(codeAdmin === undefined ? {} : { codes: codeAdmin }) },
     close: async () => {
       for (const timer of timers) clearTimeout(timer);
       job?.stop();
-      await Promise.all([site.close(), admin?.close(), characters?.close()]);
+      await Promise.all([site.close(), admin?.close(), characters?.close(), codeSite?.close(), codeAdmin?.close(), codeMail?.close()]);
     },
   };
 }

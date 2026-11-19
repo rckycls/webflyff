@@ -2,6 +2,7 @@
 // vip.sql's rules: hand-set letters adopted, letters kept in step with WEB_VIP, character letters reset, gift boxes sent once.
 import { describe, expect, it } from 'vitest';
 import { runVipPerksJob, VipPerksJob } from '../src/vip/vipPerksJob';
+import { MemoryCodeStore } from './support/memoryCodeStore';
 import { MemoryVipCharacters, MemoryVipStore } from './support/memoryVipStore';
 import type { MemoryCharacter } from './support/memoryVipStore';
 
@@ -114,6 +115,23 @@ describe('runVipPerksJob', () => {
   });
 });
 
+describe('runVipPerksJob with redeem codes (2026-11-20)', () => {
+  it('sends the code uses still waiting, and still sends the gift boxes when the code step fails', async () => {
+    const admin = new MemoryVipStore([{ account: 'tester1', passwordHash: 'x' }], () => NOW);
+    const codes = new MemoryCodeStore(admin, [{ account: 'tester1', idPlayer: '0000001', name: 'Main' }], () => NOW);
+    await codes.add({
+      label: 'Launch', kind: 'E', vipLevel: 0, vipDays: 0, maxUses: null, expiresAt: '2026-12-01T00:00:00Z',
+      items: [{ itemId: 10206, count: 5 }], keys: ['WELCOME2026'], accounts: [], admin: 'owner',
+    });
+    await codes.redeem({ account: 'tester1', key: 'WELCOME2026', requestId: 'r1', idPlayer: '0000001', characterName: 'Main', address: '203.0.113.5', confirm: false });
+    const characters = new MemoryVipCharacters([char({})]);
+    expect(await runVipPerksJob({ admin, characters, codes: { admin: codes, mail: codes } }, log)).toMatchObject({ codesSent: 1, codesWaiting: 0 });
+    await admin.give('tester1', 1, 30, true, 'owner');
+    codes.failing.add('pending');
+    expect(await runVipPerksJob({ admin, characters, codes: { admin: codes, mail: codes } }, log)).toMatchObject({ sent: 1, codesSent: 0 });
+  });
+});
+
 describe('VipPerksJob', () => {
   it('runs the steps once when a run is asked for while one is still going', async () => {
     const admin = new MemoryVipStore([{ account: 'tester1', passwordHash: 'x' }], () => NOW);
@@ -155,6 +173,41 @@ describe('startVip', () => {
       await admin.give('tester1', 1, 30, true, 'owner');
       await vi.advanceTimersByTimeAsync(10 * 60_000);
       expect(characters.mails).toHaveLength(10);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives the panel the code store and the job the code uses (2026-11-20), with the admin section only', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { vi } = await import('vitest');
+    const { startVip } = await import('../src/vip/startVip');
+    const { siteView } = await import('./support/memoryVipStore');
+    const { testConfig } = await import('./support/adminDeps');
+    vi.useFakeTimers();
+    try {
+      const admin = new MemoryVipStore([{ account: 'tester1', passwordHash: 'x' }], () => NOW);
+      const codes = Object.assign(new MemoryCodeStore(admin, [{ account: 'tester1', idPlayer: '0000001', name: 'Main' }], () => NOW), { close: async () => {} });
+      await codes.add({
+        label: 'Launch', kind: 'E', vipLevel: 0, vipDays: 0, maxUses: null, expiresAt: '2026-12-01T00:00:00Z',
+        items: [{ itemId: 10206, count: 5 }], keys: ['WELCOME2026'], accounts: [], admin: 'owner',
+      });
+      await codes.redeem({ account: 'tester1', key: 'WELCOME2026', requestId: 'r1', idPlayer: '0000001', characterName: 'Main', address: '203.0.113.5', confirm: false });
+      const characters = Object.assign(new MemoryVipCharacters([char({})]), { close: async () => {} });
+      const dir = mkdtempSync(path.join(os.tmpdir(), 'vip-codes-'));
+      const stores = { site: () => siteView(admin), admin: () => admin, characters: () => characters, codeSite: () => codes, codeAdmin: () => codes, codeMail: () => codes };
+      const log = { info: () => {}, warn: () => {} };
+      const vipSection = { uploadsDir: dir, maxPendingPerAccount: 3, deleteRejectedAfterDays: 0 };
+      const on = startVip({ ...testConfig, vip: vipSection, vipProblem: undefined }, log, () => NOW, stores);
+      expect(on.admin?.codes).toBe(codes);
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(codes.mails).toHaveLength(1);
+      await on.close();
+      const noAdmin = startVip({ ...testConfig, admin: undefined, vip: vipSection, vipProblem: undefined }, log, () => NOW, stores);
+      expect(noAdmin.admin).toBeUndefined();
+      await noAdmin.close();
     } finally {
       vi.useRealTimers();
     }
