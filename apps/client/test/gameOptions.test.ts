@@ -12,8 +12,21 @@ describe('the game options (HwOption.cpp)', () => {
   it('start as CHwOption::Init sets them: trade, party and the auto-attack on; translucency and battle music off', () => {
     expect(DEFAULT_GAME_OPTIONS).toEqual({
       trade: true, party: true, autoAttack: true, translucent: false, battleMusic: false, cameraLock: true, zoomLimit: true,
+      invertCameraUp: false, invertCameraTurn: false,
     });
     expect(loadGameOptions(null)).toEqual(DEFAULT_GAME_OPTIONS);
+  });
+
+  it('2026-11-20 (phone-camera-invert): the camera inverts are kept per browser; options kept before them read as off', () => {
+    const storage = memory();
+    saveGameOptions(storage, { ...DEFAULT_GAME_OPTIONS, invertCameraUp: true });
+    expect(JSON.parse(storage.data.get('flyffweb.gameOptions')!)).toMatchObject({ invertCameraUp: true, invertCameraTurn: false });
+    expect(loadGameOptions(storage)).toEqual({ ...DEFAULT_GAME_OPTIONS, invertCameraUp: true });
+    // a browser that kept its options before this change
+    storage.setItem('flyffweb.gameOptions', '{"trade":false,"party":true,"autoAttack":true,"translucent":false,"battleMusic":false}');
+    expect(loadGameOptions(storage)).toEqual({ ...DEFAULT_GAME_OPTIONS, trade: false });
+    storage.setItem('flyffweb.gameOptions', '{"invertCameraTurn":true,"invertCameraUp":"yes"}');
+    expect(loadGameOptions(storage)).toEqual({ ...DEFAULT_GAME_OPTIONS, invertCameraTurn: true });
   });
 
   it('are kept and read back; a broken or partial value falls back per option', () => {

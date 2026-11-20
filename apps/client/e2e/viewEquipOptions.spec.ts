@@ -130,6 +130,8 @@ test('the Option window\'s Game / Audio page: the radios kept or sent; trades an
   await expect(page.locator('.world-hud')).toHaveAttribute('data-translucent', '');
   expect(JSON.parse((await page.evaluate(() => localStorage.getItem('flyffweb.gameOptions')))!)).toEqual({
     trade: false, party: false, autoAttack: true, translucent: true, battleMusic: false,
+    // 2026-11-20: the camera options kept beside them (mouse-drag, phone-camera-invert)
+    cameraLock: true, zoomLimit: true, invertCameraUp: false, invertCameraTurn: false,
   });
   await shot(page, 'option-window-changed');
   // a trade request from Lead: BLOCK 3, no window
