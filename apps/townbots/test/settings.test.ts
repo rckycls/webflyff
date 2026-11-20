@@ -111,7 +111,7 @@ describe('loadSettings', () => {
 });
 
 describe('names and renames', () => {
-  const WORDS = { adjectives: ['Dark', 'mad'], nouns: ['Wolf', 'Blade'], titles: ['Lord'] };
+  const WORDS = { adjectives: ['Zorby', 'plim'], nouns: ['Trel', 'Mubo'], titles: ['Yoff'] };
 
   it('are optional: no word lists, no rename scroll, no early rename', () => {
     const s = parseSettings(valid());
@@ -126,14 +126,14 @@ describe('names and renames', () => {
     v.items.renameScroll = 5000;
     v.bots[0].renameSoon = true;
     const s = parseSettings(v);
-    expect(s.names!.nouns).toEqual(['Wolf', 'Blade']);
+    expect(s.names!.nouns).toEqual(['Trel', 'Mubo']);
     expect(s.items.renameScroll).toBe(5000);
     expect(s.bots[0]!.renameSoon).toBe(true);
   });
 
   const broken: Array<[string, (v: Record<string, any>) => void, RegExp]> = [
-    ['a word with a digit', (v) => { v.names = { ...WORDS, nouns: ['Wolf9'] }; }, /names\.nouns\[0\]/],
-    ['a word with a space', (v) => { v.names = { ...WORDS, titles: ['Sir Lord'] }; }, /names\.titles\[0\]/],
+    ['a word with a digit', (v) => { v.names = { ...WORDS, nouns: ['Trel9'] }; }, /names\.nouns\[0\]/],
+    ['a word with a space', (v) => { v.names = { ...WORDS, titles: ['Yoff Dree'] }; }, /names\.titles\[0\]/],
     ['no nouns', (v) => { v.names = { ...WORDS, nouns: [] }; }, /names\.nouns/],
     ['a rename scroll that is gear', (v) => { v.items.renameScroll = 6000; v.items.gear = [6000]; }, /items\.renameScroll/],
     ['renameSoon that is not true or false', (v) => { v.bots[0].renameSoon = 'yes'; }, /bots\[0\]\.renameSoon/],
@@ -153,7 +153,7 @@ describe('names and renames', () => {
       writeFileSync(join(dir, 'words.json'), JSON.stringify(WORDS));
       v.names = 'words.json';
       writeFileSync(join(dir, 'bots.json'), JSON.stringify(v));
-      expect(loadSettings(join(dir, 'bots.json')).names!.titles).toEqual(['Lord']);
+      expect(loadSettings(join(dir, 'bots.json')).names!.titles).toEqual(['Yoff']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

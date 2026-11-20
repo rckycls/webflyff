@@ -29,7 +29,7 @@ import type { TownGraph } from './townGraph';
 import { supplyCounts } from './stock';
 import type { Region, Role, TownBotsSettings } from './settings';
 
-/** The bots' world: their towns (Flaris, Saint Morning, Darkon) are all in Madrigal (`WI_WORLD_MADRIGAL`). */
+/** The bots' world: every region they live in is in Madrigal (`WI_WORLD_MADRIGAL`). */
 export const BOT_WORLD = 1;
 /** Gear sent by ITEM_SEND_TBL reaches the bag a moment after entering: it is put on this long after (ms). */
 const EQUIP_AFTER_MS = 8_000;

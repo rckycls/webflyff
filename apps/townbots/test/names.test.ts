@@ -3,7 +3,7 @@ import { validateCharacterName } from '@flyffweb/protocol';
 import { BotNames, ignName } from '../src/names';
 
 /** Made-up word lists (the real ones are private). */
-const WORDS = { adjectives: ['Dark', 'Silent', 'Mad'], nouns: ['Slayer', 'Arrow', 'Wolf', 'Blade'], titles: ['Lord', 'Sir'] };
+const WORDS = { adjectives: ['Zorby', 'Plim', 'Vask'], nouns: ['Trel', 'Mubo', 'Kesh', 'Ralt'], titles: ['Yoff', 'Dree'] };
 
 function seeded(seed: number): () => number {
   let s = seed;
@@ -42,7 +42,7 @@ describe('ignName', () => {
   });
 
   it('takes lower-case words and stays within 16 letters with long ones', () => {
-    const long = { adjectives: ['thunderous'], nouns: ['executioner', 'wolf'], titles: ['grandmaster'] };
+    const long = { adjectives: ['zorbulantic'], nouns: ['plimvaskeryx', 'trel'], titles: ['meganorbult'] };
     const random = seeded(3);
     for (let i = 0; i < 200; i++) {
       const name = ignName(long, random);
@@ -58,10 +58,10 @@ describe('BotNames', () => {
     names.set('bot01', 'Abcd');
     names.set('bot02', 'Efgh');
     expect(names.has('ABCD')).toBe(true);
-    names.set('bot01', 'DarkWolf');
+    names.set('bot01', 'ZorbyTrel');
     expect(names.has('abcd')).toBe(false);
-    expect(names.has('darkwolf')).toBe(true);
+    expect(names.has('zorbytrel')).toBe(true);
     expect(names.has('Efgh')).toBe(true);
-    expect(names.nameOf('bot01')).toBe('DarkWolf');
+    expect(names.nameOf('bot01')).toBe('ZorbyTrel');
   });
 });

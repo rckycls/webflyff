@@ -5,9 +5,9 @@ describe('renameMover', () => {
   it("gives a renamed player's mover its new name, as WorldScreen.renamePlayer does", () => {
     const player = { kind: 'player', name: 'Abcd', added: { player: { playerId: 7, name: 'Abcd' } } };
     const world = { moverByPlayerId: (id: number) => (id === 7 ? player : undefined) };
-    renameMover(world as never, 7, 'DarkWolf');
-    expect(player.name).toBe('DarkWolf');
-    expect(player.added.player.name).toBe('DarkWolf');
+    renameMover(world as never, 7, 'ZorbyTrel');
+    expect(player.name).toBe('ZorbyTrel');
+    expect(player.added.player.name).toBe('ZorbyTrel');
     expect(() => renameMover(world as never, 8, 'Nobody')).not.toThrow();
   });
 });
