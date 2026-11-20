@@ -86,10 +86,13 @@ export class BotController {
 
   get name(): string { return this.body.spec.name; }
 
-  /** Every rules step: the body's step, then the role's. */
+  /** Every rules step: the body's, with the role's where the screen steps Auto Play (before the attack loop). */
   step(): void {
+    this.body.step(() => this.roleStep());
+  }
+
+  private roleStep(): void {
     const body = this.body;
-    body.step();
     if (!body.playing) return;
     if (body.worldId() !== BOT_WORLD) {
       if (!this.elsewhereSaid) this.w.log(`${this.name} is in world ${body.worldId()}, not Flaris's: it stands still`);

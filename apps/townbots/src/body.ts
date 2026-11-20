@@ -56,6 +56,50 @@ export interface Shared {
 /** A world session that ended before the bot was in it. */
 export class EndedBeforeEntering extends Error {}
 
+/** The account letters: a town bot plays as D; the setup runs as P (GM) and nothing else. */
+const LETTER_TOWNBOT = 0x44, LETTER_SETUP = 0x50;
+
+/**
+ * Why the bot must not play with the letter its own ADD_OBJ carries (`player.authorization`), or undefined: in the setup
+ * only P, otherwise only D. A bot left GM by a setup that was cut off never plays as an administrator.
+ */
+export function letterRefusal(authorization: number, setup: boolean): string | undefined {
+  const letter = String.fromCharCode(authorization);
+  if (setup) return authorization === LETTER_SETUP ? undefined : `the setup needs the GM letter P, but the account has the letter ${letter}`;
+  return authorization === LETTER_TOWNBOT ? undefined : `the account has the letter ${letter}, not the bot letter D: it does not play (run Install-TownBots again)`;
+}
+
+/** The parts of one rules step. */
+export interface RulesStepParts {
+  world: Pick<WorldState, 'self' | 'movers' | 'step'>;
+  ownMover: Pick<OwnMover, 'control' | 'corrected'>;
+  attack: Pick<AttackLoop, 'onReleased' | 'step'>;
+  skillUse: Pick<SkillUse, 'step'>;
+  views: Pick<MoverViews, 'step'>;
+  /** What the step played, to the views and the listeners. */
+  take(): void;
+}
+
+/**
+ * One rules step, as `WorldScreen.step` takes it with no key held and nothing tapped: the press let go, then `role`
+ * (where the screen steps Auto Play), the skill use's step and the attack loop's (with the clock: a wand's or a bow's
+ * shot, `AttackLoop.automaticShot`), the own mover where that is `ControlPlayer`, every mover's step, the PLAYERCORR it
+ * may owe, what the step played, and the views' step.
+ */
+export function rulesStep(p: RulesStepParts, now: number, role?: () => void): void {
+  const own = p.world.self();
+  p.attack.onReleased();
+  role?.();
+  if (own !== undefined) {
+    const skillBranch = p.skillUse.step(own, (objectId) => p.world.movers.get(objectId));
+    if (p.attack.step(skillBranch, now)) p.ownMover.control(own, STAND, null);
+  }
+  p.world.step();
+  p.ownMover.corrected(own);
+  p.take();
+  p.views.step(p.world.movers);
+}
+
 export class BotBody implements BotParts {
   readonly data: GameData;
   playing = false;
@@ -77,6 +121,8 @@ export class BotBody implements BotParts {
   private views: MoverViews | undefined;
   private lobby: HeadlessLobby | undefined;
   private finishEntering: { resolve: () => void; reject: (error: Error) => void } | undefined;
+  /** Entering for the setup (the GM letter P), not to play (the bot letter D). */
+  private setupMode = false;
 
   /** A bundle's message, after the world applied it (refusals, the safety net, the roles). */
   onMessage: ((objectId: number, message: WorldMessage) => void) | undefined;
@@ -123,7 +169,8 @@ export class BotBody implements BotParts {
    * Logs in, picks the first open channel and the first character (made with the bot's name and look when `create` and
    * the account has none), and enters the world. Throws what went wrong, with everything closed.
    */
-  async enter(opts: { create?: boolean } = {}): Promise<void> {
+  async enter(opts: { create?: boolean; setup?: boolean } = {}): Promise<void> {
+    this.setupMode = opts.setup === true;
     this.playing = false;
     this.endedWith = undefined;
     this.world_ = undefined;
@@ -179,20 +226,11 @@ export class BotBody implements BotParts {
     }
   }
 
-  /** One rules step, as `WorldScreen.step` takes it with no key held and nothing tapped. */
-  step(): void {
+  /** One rules step (`rulesStep`), with `role` where the screen steps Auto Play: before the attack loop reads its commands. */
+  step(role?: () => void): void {
     const world = this.world_, ownMover = this.ownMover_, attack = this.attack_, skillUse = this.skillUse_, views = this.views;
     if (!this.playing || world === undefined || ownMover === undefined || attack === undefined || skillUse === undefined || views === undefined) return;
-    const own = world.self();
-    attack.onReleased();
-    if (own !== undefined) {
-      const skillBranch = skillUse.step(own, (objectId) => world.movers.get(objectId));
-      if (attack.step(skillBranch)) ownMover.control(own, STAND, null);
-    }
-    world.step();
-    ownMover.corrected(own);
-    this.take(world);
-    views.step(world.movers);
+    rulesStep({ world, ownMover, attack, skillUse, views, take: () => this.take(world) }, performance.now(), role);
   }
 
   private async handOver(lobby: HeadlessLobby, slot: number): Promise<WorldEntry> {
@@ -257,7 +295,14 @@ export class BotBody implements BotParts {
     for (const { value } of messages) {
       if (value.type === 'addMover' && value.mover.player?.self === true) added ??= value.mover;
     }
-    this.own_ = added === undefined ? undefined : new OwnState(this.data, added, entry.character.equipment);
+    // the account's letter, as the server sent it: never play as anything but a town bot (or a GM, for the setup only)
+    const refused = added === undefined ? 'its own ADD_OBJ did not come' : letterRefusal(added.player?.authorization ?? 0, this.setupMode);
+    if (refused !== undefined) {
+      this.log(`${this.spec.name}: ${refused}`);
+      session.leave();
+      throw new Error(refused);
+    }
+    this.own_ = new OwnState(this.data, added!, entry.character.equipment);
     const ground: Ground = { ...terrain.ground, objectsNear: (x, z, range) => this.shared.objects(this.worldId_)?.objectsNear(x, z, range) ?? NO_OBJECTS };
     this.ground_ = ground;
     this.world_ = new WorldState(this.data, entry.clock, ground, this.own_);

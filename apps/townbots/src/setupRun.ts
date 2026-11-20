@@ -20,7 +20,7 @@ export async function runSetup(
     const spec = settings.bots[i]!;
     const body = bodyFor(i);
     try {
-      await body.enter({ create: true });
+      await body.enter({ create: true, setup: true });
       await sleep(SETTLE_MS);
       const own = body.own();
       if (own === undefined) throw new Error('its own numbers did not come');
