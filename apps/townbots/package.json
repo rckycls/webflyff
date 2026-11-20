@@ -1,0 +1,12 @@
+{
+  "name": "@flyffweb/townbots",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@flyffweb/client": "*",
+    "@flyffweb/gateway": "*",
+    "@flyffweb/protocol": "*",
+    "ws": "^8.18.3"
+  }
+}
