@@ -2,6 +2,12 @@
 // gold while it runs, a "!" after it stopped (its reason in the tip). A click starts or stops the farm bot with the saved
 // settings; a right-click or a long press (500 ms) opens the Auto Play window. Desktop: at the right end above the task
 // bar; phone: above the quick slot over Attack (style.css).
+// 2026-11-20 (owner, "move Autoplay button icon to the place of Auto icon. Add an active autoplay indicator like a glow
+// animation or rotate glow"): the button is Auto Play's own icon (the gear with the play sign, src/icons/big), no word;
+// while the farm bot runs a gold glow turns round it (style.css); the "!" after a stop is a red badge. (A second finger's
+// tap, while the first walks, clicks it too: secondFingerTaps.ts.)
+
+import autoPlayIcon from '../../../icons/big/icon_autoplay.png';
 
 /** What the button reads and drives of Auto Play. */
 export interface AutoButtonPlay {
@@ -26,18 +32,16 @@ export class AutoButton {
     button.type = 'button';
     button.className = 'hud-auto-button';
     button.setAttribute('aria-label', 'Auto Play');
-    const text = doc.createElement('span');
-    text.className = 'hud-auto-text';
-    text.textContent = 'AUTO';
+    const icon = doc.createElement('span');
+    icon.className = 'hud-auto-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.style.backgroundImage = `url(${JSON.stringify(autoPlayIcon)})`;
     this.mark = doc.createElement('span');
     this.mark.className = 'hud-auto-mark';
-    button.append(text, this.mark);
+    button.append(icon, this.mark);
     button.addEventListener('click', () => {
       if (this.longPressed) { this.longPressed = false; return; }
-      if (this.play.farm === 'running') this.play.stop('you took control');
-      else if (this.play.startMode !== undefined) this.play.startMode();
-      else this.play.start();
-      this.refresh();
+      this.toggle();
     });
     button.addEventListener('pointerdown', () => {
       this.longPressed = false;
@@ -55,6 +59,14 @@ export class AutoButton {
       if (!this.longPressed) this.openWindow(); // a phone's long press may also bring a contextmenu
     });
     this.element = button;
+    this.refresh();
+  }
+
+  /** Starts the farm bot (the mode last started), or stops it while it runs. */
+  private toggle(): void {
+    if (this.play.farm === 'running') this.play.stop('you took control');
+    else if (this.play.startMode !== undefined) this.play.startMode();
+    else this.play.start();
     this.refresh();
   }
 

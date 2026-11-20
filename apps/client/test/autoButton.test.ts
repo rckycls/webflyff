@@ -21,6 +21,13 @@ function rig() {
 }
 
 describe('AutoButton', () => {
+  it("is Auto Play's own icon, no word (2026-11-20, owner: \"move Autoplay button icon to the place of Auto icon\")", () => {
+    const { button } = rig();
+    expect(button.element.textContent).toBe('');
+    expect(button.element.getAttribute('aria-label')).toBe('Auto Play');
+    expect(button.element.querySelector<HTMLElement>('.hud-auto-icon')!.style.backgroundImage).toMatch(/icon_autoplay\.png/);
+  });
+
   it('a click starts the farm bot, a second click stops it', () => {
     const { button, play } = rig();
     button.element.click();

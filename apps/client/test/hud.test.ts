@@ -992,8 +992,8 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     const extrasItems = [...extrasMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
     expect(extrasItems.map((item) => item.getAttribute('aria-label'))).toEqual(['Pet Filter', 'Awaken', 'Teleport']);
     expect(extrasItems.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['U', '', '']);
-    expect(extrasItems[1]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/item/itm_syssysscrawake.png');
-    expect(extrasItems[2]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/item/itm_sysblibliblinkw.png');
+    expect(extrasItems[1]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_awaken.png');
+    expect(extrasItems[2]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_teleport.png');
     extrasItems[2]!.click();
     expect(calls).toEqual(['open teleport']);
     calls.length = 0;
@@ -1141,14 +1141,17 @@ describe('APPLETS (CWndMgr::AddAllApplet, FuncApplet.cpp:178-301)', () => {
     expect(APPLETS.get(9001)).toEqual({ name: 'APP_SIEGE_RANKING', icon: 'Icon_SiegeRanking.png', desc: { text: 'Siege Ranking' }, hotkey: null });
     expect(APPLETS.get(9002)).toEqual({ name: 'APP_AUTO_PLAY', icon: 'Icon_AutoPlay.png', desc: { text: 'Auto Play' }, hotkey: null });
     expect(APPLETS.get(9003)).toEqual({ name: 'APP_PETFILTER', icon: 'Icon_PetFilter.png', desc: { text: 'Pet Filter' }, hotkey: 'U' });
-    for (const id of [9001, 9002, 9003]) {
+    // 2026-11-20 (owner): and the Awaken and Teleport windows'
+    expect(APPLETS.get(9004)).toEqual({ name: 'APP_AWAKEN', icon: 'Icon_Awaken.png', desc: { text: 'Awaken' }, hotkey: null });
+    expect(APPLETS.get(9005)).toEqual({ name: 'APP_TELEPORT', icon: 'Icon_Teleport.png', desc: { text: 'Teleport' }, hotkey: null });
+    for (const id of [9001, 9002, 9003, 9004, 9005]) {
       const file = APPLETS.get(id)!.icon!;
       for (const key of [themeKey(file), bareIconKey(file)]) {
-        expect(OWN_ICONS.get(key), key).toMatch(/icon_(siegeranking|autoplay|petfilter)\.png$/);
+        expect(OWN_ICONS.get(key), key).toMatch(/icon_(siegeranking|autoplay|petfilter|awaken|teleport)\.png$/);
         expect(OWN_ICONS.get(key)!.includes('/bare/')).toBe(key.startsWith('ui/bare/'));
       }
     }
-    expect(OWN_ICONS.size).toBe(12); // and the four VIP stars and the two weekly crests (render/nameTags.ts)
+    expect(OWN_ICONS.size).toBe(16); // and the four VIP stars and the two weekly crests (render/nameTags.ts)
   });
 });
 

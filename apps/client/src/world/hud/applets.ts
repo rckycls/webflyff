@@ -113,12 +113,12 @@ export const APPLETS: ReadonlyMap<number, Applet> = new Map([
   // The post's id, 2022, is APP_MAP_EX in this ResData.h, so it takes the client's own 9003 (after Auto Play's 9002).
   // 2026-11-17 (owner): its own icon (ownIcons.ts) in the place of the post's generic Icon_Applet.dds.
   [AppId.PETFILTER, applet('APP_PETFILTER', OWN_ICON_FILES.petFilter, 'Pet Filter', 'U')],
-  // custom (owner 2026-11-19): the Awaken window, from the Start menu, no hotkey; its icon the Scroll of Awakening's own
-  // (Itm_SysSysScrAwake.dds, already converted: an asset key `themeKey` passes through)
-  [AppId.AWAKEN, applet('APP_AWAKEN', 'ui/item/itm_syssysscrawake.png', 'Awaken')],
-  // custom (owner 2026-11-19): the Teleport window, in the Start menu's Extras folder, no hotkey; its icon the Blinkwing's own
-  // (itm_SysBliBliBlinkW.dds, already converted: an asset key `themeKey` passes through)
-  [AppId.TELEPORT, applet('APP_TELEPORT', 'ui/item/itm_sysblibliblinkw.png', 'Teleport')],
+  // custom (owner 2026-11-19): the Awaken window, from the Start menu, no hotkey; 2026-11-20 (owner, "make one for
+  // Teleporter window and Awaken window"): its own window icon (ownIcons.ts), in the place of the Scroll of Awakening's
+  [AppId.AWAKEN, applet('APP_AWAKEN', OWN_ICON_FILES.awaken, 'Awaken')],
+  // custom (owner 2026-11-19): the Teleport window, in the Start menu's Extras folder, no hotkey; 2026-11-20 (owner): its
+  // own window icon (ownIcons.ts), in the place of the Blinkwing's
+  [AppId.TELEPORT, applet('APP_TELEPORT', OWN_ICON_FILES.teleport, 'Teleport')],
 ]);
 
 /** The text `text` names: the catalog's for a TID (`texts`, '' for one it lacks), the C++'s own otherwise. */

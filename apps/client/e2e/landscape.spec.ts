@@ -264,13 +264,17 @@ test.describe('landscape (spec §3.10)', () => {
       await expectOnScreen(submenu, `the Communication sub-menu at ${size.width} x ${size.height}`, await barTop(page));
       await expect(submenu.getByRole('menuitem')).toHaveText(['Chatting', 'Messenger', 'Couple'].map((name) => new RegExp(name)));
       await page.screenshot({ path: info.outputPath(`start-menu-communication-${size.width}x${size.height}.png`) });
-      // 2026-11-19 (custom): the Extras folder: the Pet Filter (its own icon) and the Teleport window, on the screen
+      // 2026-11-19 (custom): the Extras folder: the Pet Filter, the Awaken window and the Teleport window, on the screen;
+      // 2026-11-20 (owner): each with its own icon
       await page.getByRole('menuitem', { name: 'Extras', exact: true }).click();
       const extras = page.getByRole('menu', { name: 'Extras' });
       await expect(extras).toBeVisible();
       await expectOnScreen(extras, `the Extras sub-menu at ${size.width} x ${size.height}`, await barTop(page));
-      await expect(extras.getByRole('menuitem')).toHaveText([/Pet Filter/, /Teleport/]);
-      await expect(extras.getByRole('menuitem', { name: 'Pet Filter' }).locator('.hud-menu-icon')).toHaveCSS('background-image', /\/icons\/icon_petfilter\.png/);
+      await expect(extras.getByRole('menuitem')).toHaveText([/Pet Filter/, /Awaken/, /Teleport/]);
+      for (const [name, file] of [['Pet Filter', 'icon_petfilter'], ['Awaken', 'icon_awaken'], ['Teleport', 'icon_teleport']] as const) {
+        await expect(extras.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
+      }
+      await page.screenshot({ path: info.outputPath(`start-menu-extras-${size.width}x${size.height}.png`) });
       await page.getByRole('button', { name: 'Start' }).click();
       await expect(menu).toBeHidden();
     }

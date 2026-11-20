@@ -1,6 +1,7 @@
 // `npx tsx apps/client/scripts/drawWindowIcons.ts`: draws FlyffWeb's own Start-menu icons (hud/ownIcons.ts) for the three
 // windows V15 has no icon for (owner 2026-11-17): Siege Ranking (a castle with a flag), Auto Play (a gear with a play
-// sign) and the Pet Filter (a paw over a funnel). They copy Client/Icon's look (Icon_Status.dds, Icon_Housing.dds and the
+// sign) and the Pet Filter (a paw over a funnel); 2026-11-20 the Teleport window (a blue portal) and the Awaken window (a
+// sword in a violet glow). They copy Client/Icon's look (Icon_Status.dds, Icon_Housing.dds and the
 // rest): 32 x 32, a white panel (2..29, 3..29) in a peach and red rim, an orange orb (centre 15.5, 16.2, radius 12.9) and
 // the picture over it, outlined in a dark shade of its own colour. Each is also written frameless (`ui/bare/`, as the
 // converter's `stripIconFrame` makes the phone shortcuts' icons): the orb and the picture alone.
@@ -56,6 +57,19 @@ function gearPath(cx: number, cy: number, r0: number, r1: number, teeth: number)
     points.push(at(r0, a - step * 0.3), at(r1, a - step * 0.17), at(r1, a + step * 0.17), at(r0, a + step * 0.3), at(r0, a + step * 0.5));
   }
   return `M${points.join('L')}Z`;
+}
+
+/** `arms` spiral arms round (cx, cy), from radius `r` in to the middle, each turning 200 degrees, the first from `start`. */
+function spiralArms(cx: number, cy: number, r: number, arms: number, start: number): string {
+  return [...Array(arms)].map((_, arm) => {
+    const points = [...Array(13)].map((_, i) => {
+      const t = i / 12;
+      const a = ((start + arm * (360 / arms) + t * 200) * Math.PI) / 180;
+      const radius = r * (1 - t) + 1.2 * t;
+      return `${(cx + radius * Math.cos(a)).toFixed(2)},${(cy + radius * Math.sin(a)).toFixed(2)}`;
+    });
+    return `M${points.join('L')}`;
+  }).join(' ');
 }
 
 /** The pictures, by the icons' web names (`themeKey('Icon_SiegeRanking.png')` is `ui/icon_siegeranking.png`). */
@@ -128,6 +142,50 @@ const PICTURES: Record<string, string> = {
 </g>
 <g fill="#f2bc96" opacity=".7"><ellipse cx="14" cy="11.8" rx="1.6" ry=".9"/><ellipse cx="11.8" cy="5" rx=".5" ry=".7"/><ellipse cx="7.9" cy="9" rx=".5" ry=".7"/></g>
 <path d="M9.8 18.6 L13 21.8" stroke="#e8f6ff" stroke-width=".9" opacity=".8"/>`,
+
+  // 2026-11-20 (owner, "make one for Teleporter window and Awaken window"):
+  // Teleport: a blue portal swirling in to a white-hot middle, two sparkles
+  icon_teleport: `
+<defs>
+  <radialGradient id="warp" cx="15.5" cy="16.2" r="9.6" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#fff"/><stop offset=".22" stop-color="#c8f6ff"/><stop offset=".5" stop-color="#4ab8ff"/>
+    <stop offset=".8" stop-color="#3a52dc"/><stop offset="1" stop-color="#2c1c8e"/>
+  </radialGradient>
+</defs>
+<circle cx="15.5" cy="16.2" r="9.4" fill="url(#warp)" stroke="#1c1a6a" stroke-width="1"/>
+<path d="${spiralArms(15.5, 16.2, 8.8, 4, 0)}" fill="none" stroke="#2434a8" stroke-width="1.1" stroke-linecap="round" opacity=".55"/>
+<path d="${spiralArms(15.5, 16.2, 8.8, 4, 45)}" fill="none" stroke="#f0fcff" stroke-width=".9" stroke-linecap="round" opacity=".9"/>
+<circle cx="15.5" cy="16.2" r="2" fill="#fff"/>
+<path d="${starPath(24.6, 6.6, 2.6, 0.6, 4)}" fill="#fff" stroke="#2a3ab8" stroke-width=".5" stroke-linejoin="round"/>
+<path d="${starPath(6.6, 25, 1.9, 0.45, 4)}" fill="#fff" stroke="#2a3ab8" stroke-width=".45" stroke-linejoin="round"/>`,
+
+  // Awaken: a steel sword, hilt down at the left, in a violet glow, a gold burst on its blade, sparkles
+  icon_awaken: `
+<defs>
+  <radialGradient id="aura" cx="15.5" cy="15.2" r="11" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#d8b4ff" stop-opacity=".95"/><stop offset=".6" stop-color="#a86aff" stop-opacity=".45"/>
+    <stop offset="1" stop-color="#a86aff" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="blade" x1="0" y1="-1.7" x2="0" y2="1.7" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#c8d2e6"/><stop offset="1" stop-color="#6a7896"/>
+  </linearGradient>
+  <linearGradient id="hilt" x1="0" y1="-4" x2="0" y2="4" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#fff2a8"/><stop offset=".5" stop-color="#f4b42a"/><stop offset="1" stop-color="#a8640a"/>
+  </linearGradient>
+</defs>
+<ellipse cx="15.5" cy="15.2" rx="12" ry="6.2" transform="rotate(-45 15.5 15.2)" fill="url(#aura)"/>
+<g transform="translate(9.4 22.4) rotate(-45)">
+  <path d="M1.4 -1.7 H17.6 L20.4 0 L17.6 1.7 H1.4 Z" fill="url(#blade)" stroke="#2c2a4a" stroke-width=".9" stroke-linejoin="round"/>
+  <path d="M2.4 0 H17.8" stroke="#8a96b4" stroke-width=".6"/>
+  <path d="M2 -1 H17.4" stroke="#fff" stroke-width=".5" opacity=".9"/>
+  <path d="M-.4 -4.2 H1.4 V4.2 H-.4 Z" fill="url(#hilt)" stroke="#5a3006" stroke-width=".8" stroke-linejoin="round"/>
+  <rect x="-4.6" y="-.95" width="4.2" height="1.9" fill="#7a3e1a" stroke="#3a1a08" stroke-width=".7"/>
+  <circle cx="-5.6" cy="0" r="1.35" fill="url(#hilt)" stroke="#5a3006" stroke-width=".7"/>
+</g>
+<path d="${starPath(18.4, 13.2, 5, 1.1, 4)}" fill="#fffbe0" stroke="#c87a08" stroke-width=".6" stroke-linejoin="round"/>
+<circle cx="18.4" cy="13.2" r="1.2" fill="#fff"/>
+<path d="${starPath(24.6, 21.4, 2, 0.5, 4)}" fill="#f4e6ff" stroke="#7a3ad8" stroke-width=".45" stroke-linejoin="round"/>
+<path d="${starPath(8.4, 8.4, 1.7, 0.42, 4)}" fill="#f4e6ff" stroke="#7a3ad8" stroke-width=".45" stroke-linejoin="round"/>`,
 };
 
 /** An SVG of 32 x 32: the rim and panel (framed only), then the orb and the picture, kept inside the panel. */
@@ -404,6 +462,9 @@ ${sparkle(8, 26, 2.2)}${sparkle(63.6, 26.6, 2.6)}${sparkle(53.4, 6.4, 1.8)}${spa
 </svg>`;
 }
 
+/** The AUTO button's copy of Auto Play's icon: three times the Start menu's 32 px. */
+const BIG_SIZE = 96;
+
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 400, height: 100 }, deviceScaleFactor: 1 });
@@ -416,6 +477,17 @@ try {
       await writeFile(file, png);
       console.log(path.relative(process.cwd(), file));
     }
+  }
+  // 2026-11-20 (owner, "move Autoplay button icon to the place of Auto icon"): Auto Play's frameless icon at three times
+  // its size, for the AUTO button (hud/autoPlay/autoButton.ts), which shows it at up to 48 CSS px on a phone's screen
+  await mkdir(path.join(icons, 'big'), { recursive: true });
+  {
+    const big = svg(PICTURES.icon_autoplay!, false).replace('width="32" height="32"', `width="${BIG_SIZE}" height="${BIG_SIZE}"`);
+    await page.setContent(`<html><body style="margin:0;background:transparent">${big}</body></html>`);
+    const png = await page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: BIG_SIZE, height: BIG_SIZE } });
+    const file = path.join(icons, 'big', 'icon_autoplay.png');
+    await writeFile(file, png);
+    console.log(path.relative(process.cwd(), file));
   }
   for (const tier of [1, 2, 3, 4]) {
     const n = MEDAL_SIZE;

@@ -44,35 +44,27 @@ export interface MobileTool {
 }
 
 /**
- * The windows of the Start menu the phone's shortcuts open (2026-11-10, owner: "the important icons from the Start menu"),
- * in CWndTaskMenu's order (see the top of this file), and their rank: Bag, Skill, Character and Quest stay on the narrowest
- * phone (568 px). Status has no shortcut since 2026-11-15 (its window shows from the start; the Siege Ranking icon took its place). Stats, the diagnostics panel, follows them, with
- * no icon (WorldScreen).
+ * The windows the phone's shortcuts open (2026-11-10, owner: "the important icons from the Start menu"), in two rows of
+ * five (style.css), and their rank (`data-rank`). Status has no shortcut since 2026-11-15 (its window shows from the start).
+ * Stats, the diagnostics panel, follows them, with no icon (WorldScreen).
+ * 2026-11-20 (owner, "replace autoplay icon with teleporter and rearrange the 10 icons"): Auto Play's icon is the AUTO
+ * button's now (autoPlay/autoButton.ts) and the Teleport window takes its place; the first row the player's own windows
+ * (Character, Bag, Skill, Quest) and the Teleport, the second the map, the others and the extras (World Map, Party,
+ * Messenger, Pet Filter, Siege Ranking).
  */
 export const MOBILE_SHORTCUTS: ReadonlyArray<{ label: string; applet: number; window: TaskBarWindow; rank: number }> = [
   { label: 'Character', applet: AppId.CHARACTER3, window: 'character', rank: 3 },
   { label: 'Bag', applet: AppId.INVENTORY, window: 'inventory', rank: 1 },
   { label: 'Skill', applet: AppId.SKILL3, window: 'skills', rank: 2 },
   { label: 'Quest', applet: AppId.QUEST_EX_LIST, window: 'quests', rank: 4 },
+  { label: 'Teleport', applet: AppId.TELEPORT, window: 'teleport', rank: 5 },
   { label: 'World Map', applet: AppId.MAP, window: 'worldmap', rank: 6 },
-  { label: 'Messenger', applet: AppId.MESSENGER_EX, window: 'messenger', rank: 7 },
-  { label: 'Party', applet: AppId.PARTY, window: 'party', rank: 5 },
-  // 2026-11-18 (owner, "2 rows of 5 include pet filter and autoplay"): the client's own windows, after the Start menu's,
-  // with their own icons (ownIcons.ts); with the Siege Ranking icon first, two rows of five (style.css)
-  { label: 'Pet Filter', applet: AppId.PETFILTER, window: 'petFilter', rank: 10 },
-  { label: 'Auto Play', applet: AppId.AUTO_PLAY, window: 'autoPlay', rank: 11 },
+  { label: 'Party', applet: AppId.PARTY, window: 'party', rank: 7 },
+  { label: 'Messenger', applet: AppId.MESSENGER_EX, window: 'messenger', rank: 8 },
+  { label: 'Pet Filter', applet: AppId.PETFILTER, window: 'petFilter', rank: 9 },
+  // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window, with FlyffWeb's own icon (2026-11-17, ownIcons.ts)
+  { label: 'Siege Ranking', applet: AppId.SIEGE_RANKING, window: 'siegeRanking', rank: 10 },
 ];
-
-/**
- * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking icon, first of the first row, in the place of Status (2026-11-15: nine
- * icons in rows of five and four did not fit the 730 px phone beside the target bar, so the icon takes Status's place and the
- * rows stay two of four). It is no window of Neuz's Start menu: the Start menu has its own line. 2026-11-17 (owner, "create
- * icons that matches the other windows"): its Start-menu icon, FlyffWeb's own (ownIcons.ts), in the place of the V15 winner
- * trophy.
- */
-export const SIEGE_SHORTCUT = { label: 'Siege Ranking', applet: AppId.SIEGE_RANKING, window: 'siegeRanking', rank: 9 } as const;
-/** What the desktop's Siege Ranking button shows while its icon is missing. */
-const SIEGE_TEXT = 'Siege';
 
 /** The URL of an applet's icon without its frame, or with it before that convert; '' for none. */
 function appletIconUrl(art: UiArt, applet: number): string {
@@ -122,6 +114,7 @@ export class MobileTools {
         icon.style.backgroundImage = `url(${JSON.stringify(url)})`;
         button.append(icon);
       }
+      // (2026-11-20: a second finger's tap, while the first walks, clicks it too: secondFingerTaps.ts)
       button.addEventListener('click', () => { run(); button.blur(); });
       return button;
     });
@@ -145,20 +138,5 @@ export class MobileTools {
   };
 }
 
-/**
- * 2026-11-15 (owner): the desktop's Siege Ranking button, left of the Navigator (style.css `.hud-siege-button`; the phone has
- * the icon in its shortcuts instead). 2026-11-17 (owner): it shows the same icon as the phone's, Siege Ranking's own without
- * its frame; while that is missing its text shows.
- */
-export function siegeButton(art: UiArt, run: () => void, doc: Document = document): HTMLButtonElement {
-  const button = doc.createElement('button');
-  button.type = 'button';
-  button.className = 'hud-siege-button';
-  button.setAttribute('aria-label', SIEGE_SHORTCUT.label);
-  button.title = SIEGE_SHORTCUT.label;
-  const url = appletIconUrl(art, SIEGE_SHORTCUT.applet);
-  if (url === '') button.textContent = SIEGE_TEXT;
-  else button.style.backgroundImage = `url(${JSON.stringify(url)})`;
-  button.addEventListener('click', () => { run(); button.blur(); });
-  return button;
-}
+// 2026-11-20 (owner, "remove ranking icon on top right for desktop"): the desktop's Siege Ranking button left of the
+// Navigator (2026-11-15) is gone; its window opens from the Start menu.

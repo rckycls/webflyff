@@ -7,18 +7,20 @@
 import { devices, expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { createWorldScript, newVagrantOwn, writeAddMonster, writeAddSelf } from '@flyffweb/testkit';
-import { MADRIGAL, SELF_ID, SELF_PLAYER, SQUARE, aibatt, enterFlaris, playGateway, self } from './worldHarness';
+import { MADRIGAL, SELF_ID, SELF_PLAYER, SQUARE, aibatt, enterFlaris, ownAt, playGateway, self } from './worldHarness';
 
 test.setTimeout(120_000);
 
 /** The shortcuts in the Start menu's order, and the Client/Icon picture of each. */
 // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking icon first, in Status's place (nine icons in rows of five and four
 // failed at 730 px: the target bar over an icon); 2026-11-17 (owner): FlyffWeb's own Start-menu icon (src/icons/), no longer the trophy
+// 2026-11-20 (owner, "replace autoplay icon with teleporter and rearrange the 10 icons"): the first row the player's own
+// windows and the Teleport, the second the map, the others and the extras; Auto Play's icon is the AUTO button's
 const SHORTCUTS = [
-  ['Siege Ranking', 'icon_siegeranking'], ['Character', 'icon_character'], ['Bag', 'icon_inventory'], ['Skill', 'icon_skill'],
-  ['Quest', 'icon_quest'], ['World Map', 'icon_applet'], ['Messenger', 'icon_messenger'], ['Party', 'icon_troupe'],
-  // 2026-11-18 (owner): the client's own Pet Filter and Auto Play, with their own icons (src/icons/bare)
-  ['Pet Filter', 'icon_petfilter'], ['Auto Play', 'icon_autoplay'],
+  ['Character', 'icon_character'], ['Bag', 'icon_inventory'], ['Skill', 'icon_skill'], ['Quest', 'icon_quest'],
+  ['Teleport', 'icon_teleport'],
+  ['World Map', 'icon_applet'], ['Party', 'icon_troupe'], ['Messenger', 'icon_messenger'], ['Pet Filter', 'icon_petfilter'],
+  ['Siege Ranking', 'icon_siegeranking'],
 ] as const;
 const LABELS = [...SHORTCUTS.map(([label]) => label), 'Stats'];
 /** 2026-11-17 (owner): the Start-menu lines of the client's own windows and their own icons (src/icons/). */
@@ -80,34 +82,30 @@ test('top-right shortcuts: the important Start-menu icons in two rows of five on
   if (!isMobile) {
     // the desktop has the task bar's Start menu and hotkeys: no shortcuts at the top right
     await expect(tools).toBeHidden();
-    // 2026-11-15 (owner, C2): but the Siege Ranking button, left of the Navigator, opens its window (the website's answer
-    // stands in for the route; the Start menu has the line too)
+    // 2026-11-20 (owner, "remove ranking icon on top right for desktop"): no Siege Ranking button left of the Navigator;
+    // its window opens from the Start menu (below; the website's answer stands in for the route)
     await page.route('**/api/siege/ranking*', (route) => route.fulfill({
       json: { rows: [{ rank: 1, name: 'Zed', job: 1, guild: 'Alpha', points: 9 }], checkedAt: '2026-11-15T12:00:00+08:00' },
     }));
-    const siege = page.locator('.hud-siege-button');
-    await expect(siege).toBeVisible();
-    // 2026-11-17 (owner): the same own icon as the phone's, without its frame
-    await expect(siege).toHaveCSS('background-image', /\/bare\/icon_siegeranking\./);
-    await expect(siege).toHaveText('');
-    const [siegeBox, navigatorBox] = [(await siege.boundingBox())!, (await page.locator('.hud-navigator').boundingBox())!];
-    expect(siegeBox.x + siegeBox.width).toBeLessThanOrEqual(navigatorBox.x);
-    await siege.click();
-    await expect(page.locator('.hud-sr')).toBeVisible();
-    await expect(page.locator('.hud-sr .hud-sr-row')).toContainText('Zed');
-    await page.locator('.hud-sr .hud-window-close').click();
+    await expect(page.locator('.hud-siege-button')).toHaveCount(0);
+    await expectAutoButton(page, info, 'desktop');
     await page.getByRole('button', { name: 'Start' }).click();
     // 2026-11-17 (owner): the client's own windows' Start-menu lines show FlyffWeb's own icons, framed as Client/Icon's
     for (const [name, file] of OWN_ICON_LINES) {
       await expect(page.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
     }
     await page.getByRole('menu').screenshot({ path: info.outputPath('start-menu-desktop.png') });
-    // 2026-11-19 (custom): the Pet Filter's line, with its own icon, is in the Extras folder
+    // 2026-11-19 (custom): the Pet Filter's, the Awaken window's and the Teleport window's lines are in the Extras folder;
+    // 2026-11-20 (owner): each with its own icon
     await page.getByRole('menuitem', { name: 'Extras', exact: true }).click();
-    await expect(page.getByRole('menu', { name: 'Extras' }).getByRole('menuitem', { name: 'Pet Filter' }).locator('.hud-menu-icon'))
-      .toHaveCSS('background-image', /\/icons\/icon_petfilter\.png/);
+    const extras = page.getByRole('menu', { name: 'Extras' });
+    for (const [name, file] of [['Pet Filter', 'icon_petfilter'], ['Awaken', 'icon_awaken'], ['Teleport', 'icon_teleport']] as const) {
+      await expect(extras.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
+    }
+    await extras.screenshot({ path: info.outputPath('start-menu-extras-desktop.png') });
     await page.getByRole('menuitem', { name: 'Siege Ranking' }).click();
     await expect(page.locator('.hud-sr')).toBeVisible();
+    await expect(page.locator('.hud-sr .hud-sr-row')).toContainText('Zed');
     await page.screenshot({ path: info.outputPath('top-desktop.png'), clip: top });
     return;
   }
@@ -208,13 +206,64 @@ test('top-right shortcuts: the important Start-menu icons in two rows of five on
   await tools.getByRole('button', { name: 'Siege Ranking', exact: true }).tap();
   await expect(page.locator('.hud-sr')).toBeVisible();
   await page.locator('.hud-sr .hud-window-close').tap();
-  // 2026-11-18 (owner): Pet Filter's and Auto Play's icons open their windows, as the Start menu's lines do
-  for (const [name, selector] of [['Pet Filter', '.hud-pet-filter'], ['Auto Play', '.hud-auto-play']] as const) {
+  // 2026-11-18 (owner): Pet Filter's icon opens its window, as the Start menu's line does; 2026-11-20: the Teleport's too
+  for (const [name, selector] of [['Pet Filter', '.hud-pet-filter'], ['Teleport', '.hud-teleport']] as const) {
     await tools.getByRole('button', { name, exact: true }).tap();
     await expect(page.locator(selector), name).toBeVisible();
     await page.locator(`${selector} .hud-window-close`).tap();
     await expect(page.locator(selector), name).toBeHidden();
   }
+  // 2026-11-20 (owner, "never hide the icons above when a window is open", "can the icons go under the windows?"): a
+  // window over them leaves them shown, under it (the Character window and the bag hid them before)
+  for (const [name, selector] of [['Character', '.hud-character-landscape'], ['Bag', '.hud-inventory']] as const) {
+    await tools.getByRole('button', { name, exact: true }).tap();
+    await expect(page.locator(selector), name).toBeVisible();
+    await expect(tools, `the icons with ${name} open`).toBeVisible();
+    await page.screenshot({ path: info.outputPath(`window-open-${name.toLowerCase()}.png`) });
+    await page.locator(`${selector} .hud-window-close`).tap(); // its icon may be under it
+    await expect(page.locator(selector), name).toBeHidden();
+  }
+  // 2026-11-20 (owner, "allow opening a window while walking on mobile"): a second finger on an icon while the first walks
+  // with the joystick opens its window, and the walk goes on
+  const session = await page.context().newCDPSession(page);
+  const left = { id: 1, x: 100, y: size.height * .4 };
+  const held = { ...left, y: left.y - 60 };
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [left] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [held] });
+  await page.evaluate(() => window.__client!.step(5));
+  const walking = await ownAt(page);
+  const bag = (await tools.getByRole('button', { name: 'Bag', exact: true }).boundingBox())!;
+  const finger = { id: 2, x: bag.x + bag.width / 2, y: bag.y + bag.height / 2 };
+  const tapAt = Date.now() / 1000;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', timestamp: tapAt, touchPoints: [held, finger] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', timestamp: tapAt + .08, touchPoints: [finger] });
+  await expect(page.locator('.hud-inventory')).toBeVisible();
+  await page.evaluate(() => window.__client!.step(10));
+  const walked = await ownAt(page);
+  expect(Math.hypot(walked[0] - walking[0], walked[2] - walking[2]), 'the walk goes on').toBeGreaterThan(.5);
+  // and its X (the open bag covers its own icon) closes it with a second finger too, the walk going on: every button
+  // takes a second finger's tap (2026-11-20, owner: "make every window button work with a second finger while walking")
+  const close = (await page.locator('.hud-inventory .hud-window-close').boundingBox())!;
+  const closeFinger = { id: 3, x: close.x + close.width / 2, y: close.y + close.height / 2 };
+  const closeAt = Date.now() / 1000;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', timestamp: closeAt, touchPoints: [held, closeFinger] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', timestamp: closeAt + .08, touchPoints: [closeFinger] });
+  await expect(page.locator('.hud-inventory')).toBeHidden();
+  await page.evaluate(() => window.__client!.step(10));
+  const still = await ownAt(page);
+  expect(Math.hypot(still[0] - walked[0], still[2] - walked[2]), 'the walk goes on after the X').toBeGreaterThan(.5);
+  // the Start button too: its menu opens
+  const start = (await page.getByRole('button', { name: 'Start' }).boundingBox())!;
+  const startFinger = { id: 4, x: start.x + start.width / 2, y: start.y + start.height / 2 };
+  const startAt = Date.now() / 1000;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', timestamp: startAt, touchPoints: [held, startFinger] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', timestamp: startAt + .08, touchPoints: [startFinger] });
+  await expect(page.getByRole('menu').first()).toBeVisible();
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.getByRole('button', { name: 'Start' }).tap();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await session.detach();
+  await expectAutoButton(page, info, 'phone');
 
   // two rows of five fit every phone: all of them at 844, 750, an iPhone's 730 with its address bar, 667 and 568
   for (const [width, height] of [[844, 390], [750, 342], [730, 320], [667, 375], [568, 320]] as const) {
@@ -226,6 +275,29 @@ test('top-right shortcuts: the important Start-menu icons in two rows of five on
     }
   }
 });
+
+/**
+ * 2026-11-20 (owner, "move Autoplay button icon to the place of Auto icon. Add an active autoplay indicator"): the AUTO
+ * button is Auto Play's own round icon, no word; while the farm bot runs a gold ring turns round it.
+ */
+async function expectAutoButton(page: Page, info: { outputPath: (name: string) => string }, where: string): Promise<void> {
+  const auto = page.getByRole('button', { name: 'Auto Play', exact: true }).and(page.locator('.hud-auto-button'));
+  await expect(auto).toBeVisible();
+  await expect(auto).toHaveText('');
+  await expect(auto.locator('.hud-auto-icon')).toHaveCSS('background-image', /\/big\/icon_autoplay\./);
+  const box = (await auto.boundingBox())!;
+  expect(box.width).toBeCloseTo(box.height, 0);
+  expect(await auto.evaluate((element) => getComputedStyle(element, '::before').animationName)).toBe('none');
+  // the look while it runs (the state set by hand: the scripted world has no monster to farm)
+  await auto.evaluate((element) => { (element as HTMLElement).dataset.state = 'running'; });
+  expect(await auto.evaluate((element) => getComputedStyle(element, '::before').animationName)).toBe('hud-auto-spin');
+  const pad = 14;
+  await page.screenshot({
+    path: info.outputPath(`auto-running-${where}.png`),
+    clip: { x: box.x - pad, y: box.y - pad, width: box.width + 2 * pad, height: box.height + 2 * pad },
+  });
+  await auto.evaluate((element) => { (element as HTMLElement).dataset.state = 'off'; });
+}
 
 /**
  * All the shortcuts shown, in one block between the status window and the Navigator, and no icon over the target bar, the

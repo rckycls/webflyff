@@ -75,7 +75,8 @@ import type { FlightStick } from './controls';
 import { FlightControl } from './flightControl';
 import type { FlightInput } from './flightControl';
 import { FlightButtons } from './hud/flightButtons';
-import { MOBILE_SHORTCUTS, MobileTools, SIEGE_SHORTCUT, siegeButton } from './hud/mobileTools';
+import { MOBILE_SHORTCUTS, MobileTools } from './hud/mobileTools';
+import { watchSecondFingerTaps } from './hud/secondFingerTaps';
 import { OWN_ICONS } from './hud/ownIcons';
 import { TurboGauge } from './render/TurboGauge';
 import { isGameMaster } from './authorization';
@@ -469,8 +470,8 @@ export class WorldScreen {
   private flightButtons: FlightButtons | undefined;
   /** The phone's window shortcuts at the top right. */
   private mobileTools: MobileTools | undefined;
-  /** 2026-11-15: the desktop's Siege Ranking button, left of the Navigator. */
-  private siegeButton: HTMLButtonElement | undefined;
+  /** 2026-11-20 (owner): stops making clicks of second fingers' taps (secondFingerTaps.ts). */
+  private stopSecondFingerTaps: (() => void) | undefined;
   private turboGauge: TurboGauge | undefined;
   /** Piece 7 M5: the right drag's steering since the last step, the phone's buttons, and the stick's flight keys. */
   private flightMouse = { dx: 0, dy: 0 };
@@ -2217,15 +2218,16 @@ export class WorldScreen {
     // build made for the players hides it unless the address has ?stats, debugOverlay.ts)
     const overlayShown = this.page!.overlay.shown;
     const mobileTools = new MobileTools(this.hudArt!, [
-      // 2026-11-15 (owner, C2): the Siege Ranking icon, in Status's place (the rows stay two of four, style.css)
-      { label: SIEGE_SHORTCUT.label, applet: SIEGE_SHORTCUT.applet, rank: SIEGE_SHORTCUT.rank, run: () => this.openWindow(SIEGE_SHORTCUT.window) },
       ...MOBILE_SHORTCUTS.map(({ label, applet, window, rank }) => ({ label, applet, rank, run: () => this.openWindow(window) })),
       ...(overlayShown
         ? [{ label: 'Stats', applet: null, run: () => { statsButton!.ariaExpanded = String(this.page!.overlay.togglePanel()); } }]
         : []),
     ], doc);
     this.mobileTools = mobileTools;
-    this.siegeButton = siegeButton(this.hudArt!, () => this.openWindow('siegeRanking'), doc);
+    // 2026-11-20 (owner, "allow opening a window while walking on mobile"): a second finger's tap on a button, a tab, a
+    // window's close button... while the first walks clicks it (the phone's browser makes no click of it)
+    this.stopSecondFingerTaps?.();
+    this.stopSecondFingerTaps = watchSecondFingerTaps(doc);
     const statsButton = overlayShown ? mobileTools.buttons.at(-1)! : null;
     if (statsButton !== null) statsButton.ariaExpanded = 'false';
     const logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
@@ -2994,7 +2996,7 @@ export class WorldScreen {
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
-      mobileTools.element, this.siegeButton, logOutBox.element, messageBox.element,
+      mobileTools.element, logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element,
@@ -6316,8 +6318,8 @@ this.follow(world, stage);
     this.turboGauge = undefined;
     this.flightButtons?.dispose();
     this.flightButtons = undefined;
-    this.siegeButton?.remove();
-    this.siegeButton = undefined;
+    this.stopSecondFingerTaps?.();
+    this.stopSecondFingerTaps = undefined;
     this.mobileTools?.dispose();
     this.mobileTools = undefined;
     this.flightAccelerate = undefined;
