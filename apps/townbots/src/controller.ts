@@ -148,9 +148,9 @@ export class BotController {
     let role: Role = switching ? planner.switchRole(this.name, this.body.spec.group) : planner.assign(this.name, this.body.spec.group);
     let runner = this.make(role);
     if (runner === undefined) {
-      planner.release(this.name);
-      planner.drop(this.name, role);
-      role = planner.assign(this.name, this.body.spec.group);
+      // a spot taken (every field or shop spot in use) is for now only: another role this time; no fighting is for good
+      if (role === 'farming' && !this.w.fighting.allowed) planner.drop(this.name, 'farming');
+      role = planner.switchRole(this.name, this.body.spec.group);
       runner = this.make(role) ?? new WanderRole(this.w.settings.places.town, this.io(), () => planner.remaining(this.name), FRIENDLY_MOTIONS);
     }
     this.runner = runner;
