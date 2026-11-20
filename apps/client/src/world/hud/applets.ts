@@ -46,6 +46,8 @@ export const AppId = {
   AWAKEN: 9004,
   /** custom (owner 2026-11-19): the Teleport window, the client's own id (9004 is the Awaken window's). */
   TELEPORT: 9005,
+  /** custom (owner 2026-11-20): the Redeem Code window, the client's own id. */
+  REDEEM_CODE: 9006,
 } as const;
 
 /**
@@ -119,6 +121,9 @@ export const APPLETS: ReadonlyMap<number, Applet> = new Map([
   // custom (owner 2026-11-19): the Teleport window, in the Start menu's Extras folder, no hotkey; 2026-11-20 (owner): its
   // own window icon (ownIcons.ts), in the place of the Blinkwing's
   [AppId.TELEPORT, applet('APP_TELEPORT', OWN_ICON_FILES.teleport, 'Teleport')],
+  // custom (owner 2026-11-20): the Redeem Code window, in the Start menu's Extras folder, no hotkey; its icon the event
+  // coupon's own (Itm_SysSysEveCoupon.dds, already converted)
+  [AppId.REDEEM_CODE, applet('APP_REDEEM_CODE', 'ui/item/itm_syssysevecoupon.png', 'Redeem Code')],
 ]);
 
 /** The text `text` names: the catalog's for a TID (`texts`, '' for one it lacks), the C++'s own otherwise. */

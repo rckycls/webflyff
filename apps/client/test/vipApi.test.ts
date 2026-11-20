@@ -64,3 +64,33 @@ it('scales a receipt down to 2000 px on its long side, never up', () => {
   expect(fitSize(1080, 2400)).toEqual({ width: 900, height: 2000 });
   expect(fitSize(800, 600)).toEqual({ width: 800, height: 600 });
 });
+
+// 2026-11-20 (redeem codes): the Redeem Code window's two calls
+const OFFER = { codeId: 3, label: 'Launch', vipLevel: 1, vipDays: 30, expiresAt: '2026-12-15T00:00:00Z', items: [] };
+
+it('checks a code and reads the offer, the live VIP and whether it replaces it', async () => {
+  const api = new VipApi((async () => json(200, { ok: true, offer: OFFER, vip: { level: 1, endsAt: '2026-11-30T00:00:00Z' }, replaces: false })) as unknown as typeof fetch);
+  await expect(api.codeCheck('WELCOME2026')).resolves.toEqual({ ok: true, value: { offer: OFFER, vip: { level: 1, endsAt: '2026-11-30T00:00:00Z' }, replaces: false } });
+});
+
+it('keeps the offer and the live VIP of a refused code', async () => {
+  const api = new VipApi((async () => json(409, { error: 'lower_vip', offer: OFFER, vip: { level: 4, endsAt: '2026-11-30T00:00:00Z' } })) as unknown as typeof fetch);
+  await expect(api.codeCheck('VIPONE')).resolves.toEqual({ ok: false, error: 'lower_vip', offer: OFFER, vip: { level: 4, endsAt: '2026-11-30T00:00:00Z' } });
+  const unknown = new VipApi((async () => json(404, { error: 'unknown' })) as unknown as typeof fetch);
+  await expect(unknown.codeCheck('NOPE1234')).resolves.toEqual({ ok: false, error: 'unknown' });
+});
+
+it('sends a redeem with the code, the character, the request id and the confirm, and the site token', async () => {
+  const fetchFn = vi.fn(async (url: string, _init?: RequestInit) => (url === '/api/account/login'
+    ? json(200, { account: 'tester1', csrf: 'tok' })
+    : json(200, { ok: true, useId: 9, offer: OFFER, vip: null, repeat: false })));
+  const api = new VipApi(fetchFn as unknown as typeof fetch);
+  await api.login('tester1', 'pw');
+  await expect(api.codeRedeem('WELCOME2026', 1, 'press-1', true)).resolves.toEqual({ ok: true, value: { useId: 9, offer: OFFER, vip: null, repeat: false } });
+  const [url, init] = fetchFn.mock.calls[1]!;
+  expect(url).toBe('/api/codes/redeem');
+  expect(JSON.parse(String(init?.body))).toEqual({ code: 'WELCOME2026', character: 1, requestId: 'press-1', confirm: true });
+  expect((init?.headers as Record<string, string>)['X-Site-Token']).toBe('tok');
+  const offline = new VipApi((async () => { throw new TypeError('offline'); }) as unknown as typeof fetch);
+  await expect(offline.codeRedeem('WELCOME2026', 1, 'press-2', false)).resolves.toEqual({ ok: false, error: 'unreachable' });
+});

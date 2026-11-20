@@ -54,6 +54,16 @@ import { AttackLoop, attackAble, objRadius } from './combat/attackLoop';
 import { sightBlocked } from './combat/lineOfSight';
 import { bagIsFull } from './autoplay/bag';
 import { autoPlayLimit } from './autoplay/usageLimit';
+import { VipApi } from '../site/vipApi'; // custom (owner 2026-11-20): the Redeem Code window's site API
+import { CodeMailTaker } from './codes/codeMailTaker';
+import { freeBagSlots } from './codes/codeRedeemer';
+import { RedeemCodeWindow } from './codes/redeemCodeWindow';
+
+/** custom (owner 2026-11-20): how often the world touches the site session (it ends after 60 idle minutes). */
+const SITE_KEEP_ALIVE_MS = 30 * 60_000;
+/** A Redeem press's id; a counter and the time where the page has no crypto.randomUUID (plain http). */
+let requestCount = 0;
+const newRequestId = (): string => globalThis.crypto?.randomUUID?.() ?? `r${Date.now().toString(36)}${(++requestCount).toString(36)}`;
 import { AutoPlay } from './autoplay/controller';
 import type { AutoPlayHooks } from './autoplay/controller';
 import { loadSettings, saveSettings } from './autoplay/settings';
@@ -820,6 +830,12 @@ export class WorldScreen {
   private petFilterWindow: PetFilterWindow | undefined;
   /** custom (owner 2026-11-19): the Teleport window, from the Start menu's Extras folder (hud/teleportWindow.ts). */
   private teleportWindow: TeleportWindow | undefined;
+  /** custom (owner 2026-11-20): the Redeem Code window, from the Start menu's Extras folder (codes/redeemCodeWindow.ts). */
+  private redeemCodeWindow: RedeemCodeWindow | undefined;
+  /** custom (owner 2026-11-20): moves a redeemed code's mails into the bag (codes/codeMailTaker.ts). */
+  private codeMailTaker: CodeMailTaker | undefined;
+  /** custom (owner 2026-11-20): the site session kept alive while in the world (60 minutes idle), for the codes. */
+  private siteKeepAlive: ReturnType<typeof setInterval> | undefined;
   private petFilterSent = PET_FILTER_NONE;
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
@@ -1271,7 +1287,13 @@ export class WorldScreen {
         continue;
       }
       // 2026-11-10 (bank-mail): the post's (no own state: its items and penya come as CREATEITEM and the penya's point)
-      if (isPostMessage(value)) { if (objectId === self?.objectId) this.postHud?.handle(value); continue; }
+      if (isPostMessage(value)) {
+        if (objectId === self?.objectId) {
+          this.postHud?.handle(value);
+          this.codeMailTaker?.handle(value, performance.now()); // custom (owner 2026-11-20): code mails into the bag
+        }
+        continue;
+      }
       if (value.type === 'block') this.tradeHud?.onBlock(value);
       // 2026-11-10: a blocked friend's whisper, and another's with /whisperrefuse (OnWhisper, DPClient.cpp:11790-11831, :11899-11903)
       if (value.type === 'whisper' && this.friendHud?.dropWhisper(value) === true) continue;
@@ -2565,6 +2587,32 @@ export class WorldScreen {
       sayTid: (tid) => this.sayRefusal({ kind: 'say', tid }),
       send: (place) => this.session.sendTeleportWindow(place),
     }, this.hudArt!, doc);
+    // custom (owner 2026-11-20): the Redeem Code window, on its own site API (the session cookie the lobby's login made);
+    // the session is touched every 30 minutes while in the world, so it does not run out after 60 idle minutes
+    const codeApi = new VipApi((...args) => globalThis.fetch(...args), newRequestId);
+    this.codeMailTaker = new CodeMailTaker({
+      send: (bytes) => this.session.sendBankMail(bytes),
+      freeSlots: () => (this.own === undefined ? 0 : freeBagSlots(this.own)),
+      say: (text) => this.chatWindow?.append('system', '', text, undefined, this.data?.texts.get('TID_MAIL_RECEIVE')?.color),
+    });
+    // uses redeemed before a log out and in: their mails may be waiting, or still on the way
+    this.codeMailTaker.resume(performance.now());
+    this.redeemCodeWindow = new RedeemCodeWindow({
+      api: codeApi,
+      account: () => this.entry.account,
+      playerId: () => this.entry.character.playerId,
+      freeSlots: () => (this.own === undefined ? 0 : freeBagSlots(this.own)),
+      expectMails: (useId) => this.codeMailTaker?.expect(useId, performance.now()),
+      newRequestId,
+      now: () => Date.now(),
+      say: (text) => this.chatWindow?.append('system', '', text, undefined, this.data?.texts.get('TID_MAIL_RECEIVE')?.color),
+      item: (itemId) => {
+        const prop = this.data?.itemProps.get(itemId);
+        return { name: prop?.name || `Item ${itemId}`, iconUrl: prop?.icon ? this.hudArt!.url(prop.icon) : null };
+      },
+    }, this.hudArt!, doc);
+    if (this.siteKeepAlive !== undefined) clearInterval(this.siteKeepAlive);
+    this.siteKeepAlive = setInterval(() => { void codeApi.session(); }, SITE_KEEP_ALIVE_MS);
     this.autoButton = new AutoButton(this.autoPlay!, () => {
       if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
     }, doc);
@@ -3006,6 +3054,7 @@ export class WorldScreen {
       this.autoPlayWindow.frame.element, this.autoButton.element, this.saverScreen.element, // custom (owner 2026-11-15)
       this.petFilterWindow.element, // custom (owner 2026-11-16)
       this.teleportWindow.element, // custom (owner 2026-11-19)
+      this.redeemCodeWindow.element, // custom (owner 2026-11-20)
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
@@ -4307,9 +4356,12 @@ this.follow(world, stage);
     this.housingHud?.update(); // 2026-11-15: and the Housing list's times
     this.guildHouseHud?.update(); // 2026-11-15: the guild house's time left, its storage and strip
     this.postHud?.update();
+    this.codeMailTaker?.update(performance.now()); // custom (owner 2026-11-20): asks the mailbox after a redeem
     // the new-mail notice follows the own MODE_MAILBOX (ADD_OBJ, MODIFYMODE)
     const mailOn = ((self?.added.player?.mode ?? 0) & Mode.MAILBOX) !== 0;
     if (this.mailNotice !== undefined && this.mailNotice.shown !== mailOn) this.mailNotice.set(mailOn);
+    // custom (owner 2026-11-20): the mode turning on (at entry too, where no MODIFYMODE comes) asks for code mails
+    this.codeMailTaker?.mailMode(mailOn, performance.now());
     if (this.questTracker !== undefined || this.questWindow !== undefined) {
       const questState = this.questState();
       this.questTracker?.update(questState);
@@ -4375,6 +4427,7 @@ this.follow(world, stage);
     // 2026-11-15: APP_GH_FURNITURE_STORAGE, R (FuncApplet.cpp:180): the guild's Furniture Storage
     if (window === 'guildFurniture') { this.guildHouseHud?.toggleStorage(); return; }
     if (window === 'teleport') { this.teleportWindow?.toggle(); return; } // custom (owner 2026-11-19): the Teleport window
+    if (window === 'redeemCode') { this.redeemCodeWindow?.toggle(); return; } // custom (owner 2026-11-20): the Redeem Code window
     if (window === 'couple') { this.social?.coupleWindow.toggle(); return; } // 2026-11-15 (social)
     // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window, from the Start menu and the icons
     if (window === 'siegeRanking') { this.guildCombatHud?.siegeRanking.toggle(); return; }
@@ -6264,6 +6317,10 @@ this.follow(world, stage);
 
   /** Dispose world-owned resources while leaving the cache session and page renderer available. */
   private disposeWorld(): void {
+    // custom (owner 2026-11-20): the site session's keep-alive and the Redeem Code window end with the world
+    if (this.siteKeepAlive !== undefined) clearInterval(this.siteKeepAlive);
+    this.siteKeepAlive = undefined;
+    this.redeemCodeWindow?.dispose();
     // custom (owner 2026-11-15): Auto Play ends with its world; the screen may sleep again
     this.autoPlay?.dispose();
     this.screenAwake?.release();

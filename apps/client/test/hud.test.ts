@@ -990,12 +990,19 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     const extrasMenu = menu.querySelector<HTMLElement>('.hud-taskbar-submenu[aria-label="Extras"]')!;
     expect(extrasMenu.hidden).toBe(false);
     const extrasItems = [...extrasMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
-    expect(extrasItems.map((item) => item.getAttribute('aria-label'))).toEqual(['Pet Filter', 'Awaken', 'Teleport']);
-    expect(extrasItems.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['U', '', '']);
+    // custom (owner 2026-11-20): and the Redeem Code window
+    expect(extrasItems.map((item) => item.getAttribute('aria-label'))).toEqual(['Pet Filter', 'Awaken', 'Teleport', 'Redeem Code']);
+    expect(extrasItems.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['U', '', '', '']);
     expect(extrasItems[1]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_awaken.png');
     expect(extrasItems[2]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_teleport.png');
+    expect(extrasItems[3]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/item/itm_syssysevecoupon.png');
     extrasItems[2]!.click();
     expect(calls).toEqual(['open teleport']);
+    calls.length = 0;
+    start.click();
+    extras.click();
+    extrasItems[3]!.click();
+    expect(calls).toEqual(['open redeemCode']);
     calls.length = 0;
     start.click();
     expect(submenu.hidden).toBe(true);
@@ -1014,7 +1021,8 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     document.body.dispatchEvent(pointer('pointerdown', 400, 100));
     expect(bar.menuOpen).toBe(false);
     // its owner hears each opening and closing (the world screen hides the joystick meanwhile; 2026-11-18: Messenger's too)
-    expect(changes).toEqual([true, false, true, false, true, false, true, false, true, false, true, false]); // 2026-11-19: and the Extras folder's Teleport
+    // 2026-11-19: and the Extras folder's Teleport; 2026-11-20: and its Redeem Code
+    expect(changes).toEqual([true, false, true, false, true, false, true, false, true, false, true, false, true, false]);
   });
 
   it('a press on an applet with a window in Piece 4 opens it; the other applets do nothing; a non-applet goes to the owner', () => {

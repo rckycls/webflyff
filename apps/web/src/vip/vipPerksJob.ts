@@ -9,7 +9,10 @@
 //      no character, or while its tier's box is empty.
 // It never throws: a step that fails is one warning line, and the next steps still run. The game reads a letter each time
 // a character enters the world, so a change counts from the player's next entry.
+// 2026-11-20 (redeem codes): 5. the code uses whose mails are not written yet (codes/codeDelivery.ts).
 
+import { deliverCodeUses } from '../codes/codeDelivery';
+import type { CodeDeliveryStores } from '../codes/codeDelivery';
 import type { Logger } from '../log';
 import type { VipAdminStore, VipCharacterStore, VipGift, VipGiftItem } from './vipStore';
 
@@ -21,8 +24,8 @@ export const GIFTS_PER_RUN = 50;
 export const MAX_GIFT_PAGES = 40;
 export const GIFT_TEXT = 'Thank you for supporting osflyff.online!';
 
-export interface VipJobStores { admin: VipAdminStore; characters: VipCharacterStore }
-export interface VipJobReport { adopted: number; letters: number; cleared: number; sent: number; waiting: number }
+export interface VipJobStores { admin: VipAdminStore; characters: VipCharacterStore; codes?: CodeDeliveryStores }
+export interface VipJobReport { adopted: number; letters: number; cleared: number; sent: number; waiting: number; codesSent: number; codesWaiting: number }
 
 const VIP_LETTERS = ['A', 'B', 'C', 'E'];
 const message = (error: unknown): string => String((error as Error)?.message ?? error).replace(/[\r\n]+/g, ' ');
@@ -33,7 +36,7 @@ export function itemsText(items: VipGiftItem[]): string {
 }
 
 export async function runVipPerksJob(stores: VipJobStores, log: Logger): Promise<VipJobReport> {
-  const report: VipJobReport = { adopted: 0, letters: 0, cleared: 0, sent: 0, waiting: 0 };
+  const report: VipJobReport = { adopted: 0, letters: 0, cleared: 0, sent: 0, waiting: 0, codesSent: 0, codesWaiting: 0 };
   const step = async (name: string, act: () => Promise<void>): Promise<boolean> => {
     try {
       await act();
@@ -99,6 +102,14 @@ export async function runVipPerksJob(stores: VipJobStores, log: Logger): Promise
     }
     for (const level of emptyTiers) log.warn(`vip job: the VIP ${level} gift box is empty: its gifts wait (panel, VIP tab, Gift box)`);
   });
+
+  // 5. (2026-11-20) the code uses still waiting for their mail; deliverCodeUses never throws
+  if (stores.codes !== undefined) {
+    const codes = await deliverCodeUses(stores.codes, log);
+    report.codesSent = codes.sent;
+    report.codesWaiting = codes.waiting;
+    if (codes.sent > 0) log.info(`vip job: ${codes.sent} code reward(s) mailed, ${codes.waiting} waiting`);
+  }
 
   if (report.adopted + report.letters + report.cleared + report.sent > 0) {
     log.info(`vip job: ${report.adopted} adopted, ${report.letters} letter(s) changed, ${report.cleared} character letter(s) reset, ${report.sent} gift box(es) sent, ${report.waiting} waiting`);

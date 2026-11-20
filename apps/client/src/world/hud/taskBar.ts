@@ -61,7 +61,7 @@ import { itemIconOf } from '../pets/petStatus';
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
   | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'housing' | 'guildFurniture' | 'couple'
-  | 'siegeRanking' | 'autoPlay' | 'bagEx' | 'petFilter' | 'awaken' | 'teleport';
+  | 'siegeRanking' | 'autoPlay' | 'bagEx' | 'petFilter' | 'awaken' | 'teleport' | 'redeemCode';
 /**
  * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window's own id: it is no applet of Neuz's (no hotkey); its Start menu
  * line and the icons open it. 2026-11-17 (owner): it, Auto Play and the Pet Filter have FlyffWeb's own icons (`APPLETS`).
@@ -122,6 +122,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [APP_PETFILTER, 'petFilter'],
   [AppId.AWAKEN, 'awaken'], // custom (owner 2026-11-19)
   [AppId.TELEPORT, 'teleport'], // custom (owner 2026-11-19)
+  [AppId.REDEEM_CODE, 'redeemCode'], // custom (owner 2026-11-20)
 ]);
 
 /**
@@ -177,6 +178,8 @@ const MENU: ReadonlyArray<{ id: number; text: string } | { folder: string; items
   // Wakazaki pet filter's line; U still opens it), the Awaken window (custom, owner 2026-11-19) and the Teleport window
   { folder: 'Extras', items: [
     { id: APP_PETFILTER, text: 'Pet Filter' }, { id: AppId.AWAKEN, text: 'Awaken' }, { id: AppId.TELEPORT, text: 'Teleport' },
+    // custom (owner 2026-11-20): the Redeem Code window (world/codes/redeemCodeWindow.ts)
+    { id: AppId.REDEEM_CODE, text: 'Redeem Code' },
   ] },
   // CWndTaskMenu's APP_OPTIONEX line, 'Option' (TID_APP_OPTION), just before Log out (WndTaskBar.cpp:2638)
   { id: AppId.OPTIONEX, text: 'Option' },

@@ -4,6 +4,7 @@
 // prices (US$ for everyone, pesos for players in the Philippines). Every change goes in the Log tab. No pop-up boxes:
 // each risky button asks again in place.
 
+import { codesView } from './codes.js';
 import { api, busy, el, fill, messageLine, timeText } from './ui.js';
 
 const STATUS_NAMES = { P: 'Processing', A: 'Approved', R: 'Rejected' };
@@ -342,7 +343,7 @@ function giftsView() {
 }
 
 export function vipTab() {
-  const views = { Requests: requestsView(), 'Payment QRs': qrsView(), Tiers: tiersView(), 'Give VIP': giveView(), 'Gift box': giftBoxView(), Gifts: giftsView() };
+  const views = { Requests: requestsView(), 'Payment QRs': qrsView(), Tiers: tiersView(), 'Give VIP': giveView(), 'Gift box': giftBoxView(), Gifts: giftsView(), Codes: codesView() };
   let current = 'Requests';
   const buttons = Object.keys(views).map((name) => el('button', { type: 'button', class: 'quiet', text: name, 'aria-pressed': String(name === current), onclick: () => pick(name) }));
   const box = el('div');

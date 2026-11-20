@@ -9,6 +9,7 @@
 // - `GET /api/discord`: the home page's Discord button (discord.ts), or `404 {error:'off'}` without one;
 // - `/api/account/*` and `/api/vip*`: Support / VIP (vip/siteVip.ts), or `503 {error:'off'}` without web.config.json's
 //   `vip` section;
+// - `/api/codes/*` (2026-11-20, redeem codes): through Support / VIP's routes, on the player's session (codes/siteCodes.ts);
 // - anything else: `404 {error:'not_found'}`.
 //
 // Every answer is JSON with `Cache-Control: no-store`, and no CORS headers: only the site's own pages may call it.
@@ -143,7 +144,8 @@ export function createWebServer(deps: WebServerDeps): Server {
       send(res, answer.status, answer.body);
       return;
     }
-    if (path.startsWith('/api/account/') || path === '/api/vip' || path.startsWith('/api/vip/') || path === '/api/autoplay' || path.startsWith('/api/autoplay/')) {
+    if (path.startsWith('/api/account/') || path === '/api/vip' || path.startsWith('/api/vip/') || path === '/api/autoplay' || path.startsWith('/api/autoplay/')
+      || path.startsWith('/api/codes/')) {
       if (deps.vip === undefined) {
         send(res, 503, { error: 'off' });
         return;

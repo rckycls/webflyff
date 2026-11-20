@@ -22,12 +22,23 @@ export interface VipNow { level: number; name: string | null; endsAt: string }
 export interface Me { account: string; vip: VipNow | null; requests: MyRequest[]; gift?: GiftStatus | null }
 export interface VipPageData { tiers: VipTier[]; qrs: PayQr[]; maxPending: number; me?: Me }
 
+// 2026-11-20 (redeem codes): the code routes' answers (apps/web/src/codes/siteCodes.ts)
+export interface VipLive { level: number; endsAt: string }
+export interface CodeOfferView { codeId: number; label: string; vipLevel: number; vipDays: number; expiresAt: string; items: Array<{ itemId: number; count: number }> }
+export interface CodeCheckView { offer: CodeOfferView; vip: VipLive | null; replaces: boolean }
+export interface CodeRedeemView { useId: number; offer: CodeOfferView; vip: VipLive | null; repeat: boolean }
+
+/** The code refusals, each with its own message in the game (world/codes/codeRedeemer.ts). */
+export type CodeError = 'format' | 'unknown' | 'expired' | 'inactive' | 'claimed' | 'key_used' | 'mine' | 'not_listed' | 'lower_vip' | 'confirm' | 'character';
+const CODE_ERRORS: readonly CodeError[] = ['format', 'unknown', 'expired', 'inactive', 'claimed', 'key_used', 'mine', 'not_listed', 'lower_vip', 'confirm', 'character'];
+
 export type VipError =
   | 'off' | 'wrong' | 'banned' | 'too_many' | 'session' | 'forbidden' | 'invalid' | 'size' | 'reference' | 'repeat' | 'slow_down'
-  | 'server' | 'unreachable';
-export type Answer<T> = { ok: true; value: T } | { ok: false; error: VipError; field?: string; max?: number };
+  | 'server' | 'unreachable' | CodeError;
+/** A refusal keeps the code's `offer` and the account's live `vip` when the answer has them (a code refusal). */
+export type Answer<T> = { ok: true; value: T } | { ok: false; error: VipError; field?: string; max?: number; offer?: CodeOfferView | null; vip?: VipLive | null };
 
-const NAMED: readonly VipError[] = ['off', 'wrong', 'banned', 'too_many', 'session', 'forbidden', 'invalid', 'size', 'reference', 'repeat', 'slow_down', 'server'];
+const NAMED: readonly VipError[] = ['off', 'wrong', 'banned', 'too_many', 'session', 'forbidden', 'invalid', 'size', 'reference', 'repeat', 'slow_down', 'server', ...CODE_ERRORS];
 
 async function bodyOf(response: Response): Promise<Record<string, unknown>> {
   try {
@@ -38,14 +49,36 @@ async function bodyOf(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
+const record = (value: unknown): Record<string, unknown> | null =>
+  (typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
+
+/** A code's offer from an answer, or null. */
+function readOffer(value: unknown): CodeOfferView | null {
+  const o = record(value);
+  if (o === null) return null;
+  const items = Array.isArray(o.items) ? o.items.map(record).filter((i): i is Record<string, unknown> => i !== null) : [];
+  return {
+    codeId: Number(o.codeId ?? 0), label: String(o.label ?? ''), vipLevel: Number(o.vipLevel ?? 0), vipDays: Number(o.vipDays ?? 0),
+    expiresAt: String(o.expiresAt ?? ''), items: items.map((i) => ({ itemId: Number(i.itemId ?? 0), count: Number(i.count ?? 0) })),
+  };
+}
+
+/** A live VIP from an answer, or null. */
+function readLive(value: unknown): VipLive | null {
+  const v = record(value);
+  return v === null || !(Number(v.level) > 0) ? null : { level: Number(v.level), endsAt: String(v.endsAt ?? '') };
+}
+
 /** A refusal by the body's `{error, field, max}`; an unnamed one is `server`. */
-async function refusal(response: Response): Promise<{ ok: false; error: VipError; field?: string; max?: number }> {
-  const { error, field, max } = await bodyOf(response);
+async function refusal(response: Response): Promise<{ ok: false; error: VipError; field?: string; max?: number; offer?: CodeOfferView | null; vip?: VipLive | null }> {
+  const { error, field, max, offer, vip } = await bodyOf(response);
   const named = NAMED.find((e) => e === error) ?? (response.status === 403 ? 'forbidden' : 'server');
   return {
     ok: false, error: named,
     ...(typeof field === 'string' ? { field } : {}),
     ...(typeof max === 'number' ? { max } : {}),
+    ...(offer !== undefined ? { offer: readOffer(offer) } : {}),
+    ...(vip !== undefined ? { vip: readLive(vip) } : {}),
   };
 }
 
@@ -130,6 +163,18 @@ export class VipApi {
   async logout(): Promise<void> {
     await this.post('/api/account/logout', {}, () => undefined);
     this.csrf = '';
+  }
+
+  /** 2026-11-20 (redeem codes): what a code would give the session's account now. */
+  codeCheck(code: string): Promise<Answer<CodeCheckView>> {
+    return this.post('/api/codes/check', { code }, (b) => ({ offer: readOffer(b.offer)!, vip: readLive(b.vip), replaces: b.replaces === true }));
+  }
+
+  /** 2026-11-20 (redeem codes): uses a code; its items go to `character` (the playing character's id). */
+  codeRedeem(code: string, character: number, requestId: string, confirm: boolean): Promise<Answer<CodeRedeemView>> {
+    return this.post('/api/codes/redeem', { code, character, requestId, confirm }, (b) => ({
+      useId: Number(b.useId ?? 0), offer: readOffer(b.offer)!, vip: readLive(b.vip), repeat: b.repeat === true,
+    }));
   }
 
   /** A request: the tier, the currency paid in, the reference number, the receipt as base64. A new request id each time. */
