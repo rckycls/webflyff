@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 // custom (owner 2026-11-19): the Teleport window (hud/teleportWindow.ts).
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UiArt } from '../src/world/hud/art';
 import { TELEPORT_LAYOUT, TeleportWindow } from '../src/world/hud/teleportWindow';
 import type { TeleportHost } from '../src/world/hud/teleportWindow';
 
 const art: UiArt = { url: (key) => `/assets/${key}`, sheets: null };
 
-afterEach(() => document.body.replaceChildren());
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.useRealTimers();
+});
 
 interface Fake extends TeleportHost {
   letter: string;
@@ -85,14 +88,44 @@ describe('the Teleport window', () => {
     expect(window.isOpen).toBe(true);
   });
 
-  it('sends a VIP1 player\'s VIP place and closes', () => {
+  it('sends a VIP1 player\'s VIP place, and closes once the teleport starts (owner 2026-11-20)', () => {
     const { window, host, rows } = opened('A');
     expect(rows.some((r) => r.hasAttribute('data-locked'))).toBe(false);
     expect(window.window.control('WIDC_TEXT1').textContent).not.toContain('VIP only');
     press(window, rows[11]!);
     apply(window);
     expect(host.sent).toEqual([11]);
+    // open, waiting for the World's move; a second press sends nothing
+    expect(window.isOpen).toBe(true);
+    expect(window.window.frame.element.hasAttribute('data-sending')).toBe(true);
+    apply(window);
+    expect(host.sent).toEqual([11]);
+    window.moved();
     expect(window.isOpen).toBe(false);
+  });
+
+  it('stays open when the World refuses (no move): Apply works again after 2 s, and a late move does not close it', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-20T00:00:00Z'));
+    const { window, host, rows } = opened('F');
+    press(window, rows[1]!);
+    apply(window);
+    vi.advanceTimersByTime(1_999);
+    apply(window);
+    expect(host.sent).toEqual([1]);
+    vi.advanceTimersByTime(1);
+    expect(window.window.frame.element.hasAttribute('data-sending')).toBe(false);
+    apply(window);
+    expect(host.sent).toEqual([1, 1]);
+    // a move long after the last press is no teleport of the window's: it stays
+    vi.advanceTimersByTime(10_000);
+    window.moved();
+    expect(window.isOpen).toBe(true);
+    // a move with no press at all neither
+    window.close();
+    window.open();
+    window.moved();
+    expect(window.isOpen).toBe(true);
   });
 
   it('refuses under 10,000 Penya with V15\'s line, and sends 10,000', () => {

@@ -3549,6 +3549,8 @@ fieldset:disabled .btn {
 }
 @keyframes teleport-mark { 50% { transform: scale(1.35); } }
 @media (prefers-reduced-motion: reduce) { .hud-teleport .teleport-marker { animation: none; } }
+/* 2026-11-20 (owner): Apply dimmed while its teleport is on its way (the window closes when the World moves the player) */
+.hud-teleport[data-sending] [data-control='WIDC_APPLY'] { opacity: 0.55; cursor: default; }
 .hud-teleport [data-control='WIDC_STATIC2'] .hud-res-static-text { color: #000000; }
 /* The phone: the same two columns in a compact panel over the open bag (overBag), as the other compact windows: the list
    on the left (lines 26 px for a finger, scrolled), the price and Apply (the phone panels' silver button) under it; the

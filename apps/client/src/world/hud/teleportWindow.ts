@@ -7,7 +7,11 @@
 //   the right     the place's name over its V15 region map (4:3) with a mark on the landing point, and a line about it
 //   Apply         a VIP place for a regular player: "Only VIP players can teleport there."; under 10,000 Penya: V15's
 //                 TID_GAME_LACKMONEY; else the place's number goes to the World (TELEPORT_WINDOW 0x8fff0120), which checks
-//                 everything again, and the window closes
+//                 everything again
+//   closing       2026-11-20 (owner, "close the teleporter once teleporting is started"): the window closes when the World
+//                 moves the own player (`moved`, its SETPOS or a change of world) within MOVE_LIMIT_MS of the press. A
+//                 refusal (the World's chat line: the wait, a state, a place) leaves it open, and Apply takes a press again
+//                 after SEND_HOLD_MS, the World's wait between two teleports (TELEPORT_WINDOW_WAIT, 2 s since 2026-11-20)
 //
 // The phone: the same two columns in a compact panel over the open bag (style.css, `.hud-teleport`).
 
@@ -23,6 +27,10 @@ const GROUP = 'WndEditTile200.tga';
 /** The VIP star (FlyffWeb's own picture, render/nameTags.ts `vipKey`). */
 const VIP_STAR = 'ui/vipstar1.png';
 export const VIP_ONLY = 'Only VIP players can teleport there.';
+/** After a press, Apply sends nothing more this long: the World's wait between two teleports (`TELEPORT_WINDOW_WAIT`). */
+export const SEND_HOLD_MS = 2_000;
+/** A move of the own player this soon after a press is the window's teleport, and closes it. */
+const MOVE_LIMIT_MS = 5_000;
 
 /** The window: the list on the left, the name, the map and the line on the right, the price and Apply under the list. */
 export const TELEPORT_LAYOUT: ResLayout = {
@@ -65,8 +73,11 @@ export class TeleportWindow {
    * row now under the finger (as the Forsaken Tower's window).
    */
   private pressed = false;
+  /** When Apply last sent (`Date.now()`), or null: no teleport of the window's is on its way. */
+  private sentAt: number | null = null;
+  private holdTimer = 0;
 
-  constructor(private readonly host: TeleportHost, private readonly art: UiArt, doc: Document = document) {
+  constructor(private readonly host: TeleportHost, private readonly art: UiArt, private readonly doc: Document = document) {
     const window = new ResWindow(TELEPORT_LAYOUT, art, doc);
     window.frame.element.classList.add('hud-teleport');
     // above the phone's open bag, as the other windows a Start menu line opens
@@ -125,8 +136,19 @@ export class TeleportWindow {
   /** Centred, on the place picked last (Flaris the first time), the VIP places locked or not for this player. */
   open(): void {
     this.pressed = false;
+    this.release();
     this.choose(this.chosen);
     this.window.open();
+  }
+
+  /**
+   * The World moved the own player (its SETPOS, or a change of world): when that comes within MOVE_LIMIT_MS of a press of
+   * Apply, it is this window's teleport starting, and the window closes.
+   */
+  moved(): void {
+    const sentAt = this.sentAt;
+    this.release();
+    if (sentAt !== null && Date.now() - sentAt <= MOVE_LIMIT_MS && this.window.isOpen) this.window.close();
   }
 
   /** The Start menu line: open it, or close it when it is open. */
@@ -140,6 +162,7 @@ export class TeleportWindow {
   }
 
   dispose(): void {
+    this.release();
     this.window.dispose();
   }
 
@@ -164,6 +187,8 @@ export class TeleportWindow {
   }
 
   private apply(): void {
+    // a teleport on its way: no second one (the World would refuse it, with its wait's line)
+    if (this.sentAt !== null && Date.now() - this.sentAt < SEND_HOLD_MS) return;
     const place = TELEPORT_PLACES[this.chosen]!;
     if (!canTeleportTo(place, this.host.authorization())) {
       this.host.say(VIP_ONLY);
@@ -174,6 +199,19 @@ export class TeleportWindow {
       return;
     }
     this.host.send(this.chosen);
-    this.window.close();
+    // open until the World moves the player (`moved`); Apply dimmed until it takes a press again
+    this.sentAt = Date.now();
+    this.window.frame.element.toggleAttribute('data-sending', true);
+    const view = this.doc.defaultView ?? window;
+    view.clearTimeout(this.holdTimer);
+    this.holdTimer = view.setTimeout(() => this.window.frame.element.toggleAttribute('data-sending', false), SEND_HOLD_MS);
+  }
+
+  /** Apply takes presses again, and no move closes the window until the next one. */
+  private release(): void {
+    this.sentAt = null;
+    (this.doc.defaultView ?? window).clearTimeout(this.holdTimer);
+    this.holdTimer = 0;
+    this.window?.frame.element.toggleAttribute('data-sending', false);
   }
 }
