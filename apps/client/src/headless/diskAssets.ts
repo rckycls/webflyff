@@ -159,12 +159,22 @@ export class Terrain {
 export async function placedObjects(
   assets: DiskAssets, manifest: WorldManifest, x: number, z: number, radius = 1,
 ): Promise<CollisionShapes> {
+  return placedObjectsAround(assets, manifest, [[x, z]], radius);
+}
+
+/** `placedObjects` around several D3D (x, z) points at once (the town bots' towns): each tile read once. */
+export async function placedObjectsAround(
+  assets: DiskAssets, manifest: WorldManifest, points: ReadonlyArray<readonly [number, number]>, radius = 1,
+): Promise<CollisionShapes> {
   const problems: string[] = [];
   const shapes = new CollisionShapes(assets, manifest, { error: (message) => problems.push(message) });
   shapes.activate();
-  const { visible, preload } = tilesInRange(tileOf(toWebPosition([x, 0, z]), manifest.mpu), radius, manifest.size);
-  const keys = [...visible, ...preload].filter((key) => Object.hasOwn(manifest.tiles, key));
-  await Promise.all(keys.map((key) => shapes.place(assets.tile(manifest.tiles[key]!))));
+  const keys = new Set<string>();
+  for (const [x, z] of points) {
+    const { visible, preload } = tilesInRange(tileOf(toWebPosition([x, 0, z]), manifest.mpu), radius, manifest.size);
+    for (const key of [...visible, ...preload]) if (Object.hasOwn(manifest.tiles, key)) keys.add(key);
+  }
+  await Promise.all([...keys].map((key) => shapes.place(assets.tile(manifest.tiles[key]!))));
   if (problems.length > 0) throw new Error(`the placed objects' collision shapes could not all be read: ${problems.join('; ')}`);
   return shapes;
 }

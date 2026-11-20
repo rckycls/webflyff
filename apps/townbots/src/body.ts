@@ -84,6 +84,14 @@ export interface RulesStepParts {
   take(): void;
 }
 
+/** A player renamed (QUERYSETPLAYERNAME's answer): its mover in view gets the new name (`WorldScreen.renamePlayer`). */
+export function renameMover(world: Pick<WorldState, 'moverByPlayerId'>, playerId: number, name: string): void {
+  const mover = world.moverByPlayerId(playerId);
+  if (mover === undefined || mover.added.player === undefined) return;
+  mover.name = name;
+  mover.added.player.name = name;
+}
+
 /**
  * One rules step, as `WorldScreen.step` takes it with no key held and nothing tapped: the press let go, then `role`
  * (where the screen steps Auto Play), the skill use's step and the attack loop's (with the clock: a wand's or a bow's
@@ -375,6 +383,11 @@ export class BotBody implements BotParts {
       }
       if (value.type === 'queryGetDestObj') {
         this.attack_?.onQueryGetDestObj(value.fromId);
+        continue;
+      }
+      if (value.type === 'setPlayerName') {
+        renameMover(world, value.playerId, value.name);
+        if (!joining) this.onMessage?.(objectId, value);
         continue;
       }
       if (world.movers.has(objectId)) {

@@ -3,7 +3,7 @@ import { HGT, encodeCollisionBin, toWebMatrix } from '@flyffweb/formats';
 import type { Vec3, WebTile, WorldManifest } from '@flyffweb/formats';
 import type { MoverLook } from '../src/world/render/looks';
 import { HAttr } from '../src/world/sim/collision';
-import { Terrain, drawnBox, glbJson, glbSceneExtras, placedObjects } from './helpers/diskAssets';
+import { Terrain, drawnBox, glbJson, glbSceneExtras, placedObjects, placedObjectsAround } from './helpers/diskAssets';
 import type { DiskAssets } from './helpers/diskAssets';
 import { gameDataOf } from './helpers/movers';
 import { itemProp } from './helpers/ownState';
@@ -193,5 +193,13 @@ describe("placedObjects (the stage's collision shapes, read from the disk)", () 
   it('throws when a shape cannot be read, which the stage would say on the overlay', async () => {
     const { assets, manifest } = objectWorld(false);
     await expect(placedObjects(assets, manifest, 10, 20)).rejects.toThrow('collision/obj_wall.bin is broken');
+  });
+
+  it('around several points: the tiles around each, each read once', async () => {
+    const { assets, manifest, asked } = objectWorld(true);
+    const shapes = await placedObjectsAround(assets, manifest, [[10, 20], [1800, 1800], [12, 22]]);
+    expect([...asked].sort()).toEqual(['t/0_0', 't/3_3']);
+    expect(shapes.objectsNear(10, 20, 0)).toHaveLength(1);
+    expect(shapes.objectsNear(1800, 1800, 0)).toHaveLength(1);
   });
 });

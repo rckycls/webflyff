@@ -8,7 +8,7 @@ import type { CollisionShapes } from '@flyffweb/scene';
 import { parseConfig } from '@flyffweb/gateway/src/config';
 import type { GatewayConfig } from '@flyffweb/gateway/src/config';
 import { startGateway } from '@flyffweb/gateway/src/server';
-import { DiskAssets, Terrain, placedObjects } from '@flyffweb/client/src/headless/diskAssets';
+import { DiskAssets, Terrain, placedObjectsAround } from '@flyffweb/client/src/headless/diskAssets';
 import { Link } from '@flyffweb/client/src/headless/link';
 import { loadGameData } from '@flyffweb/client/src/world/gameData';
 import { BotBody } from './body';
@@ -17,8 +17,10 @@ import { BotController } from './controller';
 import type { BotWorld } from './controller';
 import { fileLog } from './log';
 import type { Log } from './log';
+import { BotNames } from './names';
 import { RolePlanner } from './roles';
 import { SpotBook } from './roles/farm';
+import { PlaceBook } from './roles/places';
 import { Runner } from './runner';
 import type { BotHandle } from './runner';
 import { loadSettings } from './settings';
@@ -29,7 +31,7 @@ import { TownGraph } from './townGraph';
 
 /** The bots' gateway takes only this origin, and listens on 127.0.0.1 alone. */
 const ORIGIN = 'http://townbots.localhost';
-/** The placed objects are loaded once per world, this many tiles around the lodestar. */
+/** The placed objects are loaded once per world, this many tiles around each region's lodestar. */
 const OBJECTS_RADIUS = 2;
 
 /** The bots' own gateway: the public one's routes, on loopback only, for one origin, with room for every bot. */
@@ -70,8 +72,8 @@ function makeShared(settings: TownBotsSettings, assets: DiskAssets, data: Shared
       const got = objects.get(worldId);
       if (got !== undefined) return got === 'loading' || got === 'failed' ? undefined : got;
       objects.set(worldId, 'loading');
-      const [x, , z] = settings.places.lodestar;
-      placedObjects(assets, world(worldId).manifest, x, z, OBJECTS_RADIUS).then(
+      const centers = Object.values(settings.regions).map((r): [number, number] => [r.places.lodestar[0], r.places.lodestar[2]]);
+      placedObjectsAround(assets, world(worldId).manifest, centers, OBJECTS_RADIUS).then(
         (shapes) => { objects.set(worldId, shapes); log(`placed objects of world ${worldId} loaded`); },
         (error: Error) => { objects.set(worldId, 'failed'); log(`placed objects of world ${worldId}: ${error.message}`); },
       );
@@ -95,7 +97,8 @@ async function main(): Promise<void> {
   const { config, certifierAddress } = botGatewayConfig(settings);
   const gateway = await startGateway(config, { info: (line) => { if (!/^(open|close) /.test(line)) log(`gateway: ${line}`); } });
   const shared = makeShared(settings, assets, data, gateway.port, certifierAddress, log);
-  const botNames = new Set(settings.bots.map((bot) => bot.name.toLowerCase()));
+  const botNames = new BotNames();
+  for (const bot of settings.bots) botNames.set(bot.account, bot.name);
 
   if (values.setup === true) {
     log(`setup of ${settings.bots.length} bots`);
@@ -107,15 +110,16 @@ async function main(): Promise<void> {
     return;
   }
 
-  const world: BotWorld = {
-    settings, botNames, random: Math.random, log,
-    planner: new RolePlanner(settings.roleTargets, Math.random, () => Date.now()),
-    spots: new SpotBook(settings.places.spots),
-    town: new TownGraph(settings.places),
-    shopSpots: new Map(),
-    fighting: { allowed: true },
-  };
-  const controllers = settings.bots.map((spec) => new BotController(new BotBody(spec, shared, log), world));
+  // one planner, spot book, town graph and place book per region; the names and the fighting switch are every bot's
+  const fighting = { allowed: true };
+  const regions = new Map<string, BotWorld>(Object.entries(settings.regions).map(([name, region]) => [name, {
+    settings, region, botNames, fighting, random: Math.random, log,
+    planner: new RolePlanner(region.roleTargets, Math.random, () => Date.now()),
+    spots: new SpotBook(region.places.spots),
+    places: new PlaceBook(),
+    town: new TownGraph(region.places),
+  }]));
+  const controllers = settings.bots.map((spec) => new BotController(new BotBody(spec, shared, log), regions.get(spec.home)!));
   const handles: BotHandle[] = controllers.map((c) => ({
     name: c.name,
     enter: () => c.body.enter(),
@@ -133,7 +137,7 @@ async function main(): Promise<void> {
   });
   const runner = new Runner(handles, { now: () => Date.now(), log });
   runner.start();
-  log(`town bots: ${handles.length} bots, their gateway on 127.0.0.1:${gateway.port}`);
+  log(`town bots: ${handles.length} bots in ${regions.size} regions, their gateway on 127.0.0.1:${gateway.port}`);
   // what the bots cost the server, every 10 minutes
   let cpu = process.cpuUsage();
   let at = Date.now();
@@ -146,7 +150,8 @@ async function main(): Promise<void> {
   }, 600_000);
   // what each bot holds of its supplies, for a refill (every 5 minutes, and at the stop)
   const items = settings.items;
-  const supplyIds = [...new Set([...items.potions, ...items.upgrade.materials, ...items.upgrade.spares, ...items.shop.map((s) => s.itemId)])];
+  const supplyIds = [...new Set([...items.potions, ...items.upgrade.materials, ...items.upgrade.spares, ...items.shop.map((s) => s.itemId),
+    ...(items.renameScroll === undefined ? [] : [items.renameScroll])])];
   const stock = new Map<string, Record<number, number>>();
   const saveStock = (): void => {
     if (settings.stockFile === undefined) return;

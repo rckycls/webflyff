@@ -25,13 +25,13 @@ async function main(): Promise<void> {
   const [placesPath, assetsDir, worldArg] = args.filter((a) => a !== '--write-links');
   if (placesPath === undefined) throw new Error('usage: checkPlaces.ts <places.json> [assets dir] [world id]');
   const worldId = Number(worldArg ?? 1);
-  // the places file alone, checked as the settings check it (a minimal settings object around it)
+  // the places file alone, checked as the settings check a region's (a minimal settings object around it)
   const places = parseSettings({
-    gatewayConfig: '-', assetsDir: '-', logFile: '-', roleTargets: { farming: 0, wandering: 0, upgrading: 0, shop: 0, afk: 0 },
-    bots: [{ account: 'check', password: 'check', bankPin: '0000', name: 'Check', group: 'rookie', level: 1, job: 0, look: { sex: 0, hair: 0, face: 0 } }],
+    gatewayConfig: '-', assetsDir: '-', logFile: '-',
+    regions: { check: { roleTargets: { farming: 0, wandering: 0, upgrading: 0, shop: 0, afk: 0 }, places: JSON.parse(readFileSync(placesPath, 'utf8')) as unknown } },
+    bots: [{ account: 'check', password: 'check', bankPin: '0000', name: 'Check', home: 'check', group: 'rookie', level: 1, job: 0, look: { sex: 0, hair: 0, face: 0 } }],
     replies: ['-'], items: { potions: [], upgrade: { materials: [], spares: [] }, shop: [], shopTitles: [] },
-    places: JSON.parse(readFileSync(placesPath, 'utf8')) as unknown,
-  }).places;
+  }).regions.check!.places;
   const assets = assetsDir === undefined ? DiskAssets.open() : DiskAssets.open(assetsDir);
   const data = await loadGameData(assets);
   const folder = data.worlds.get(worldId);
@@ -74,8 +74,13 @@ async function main(): Promise<void> {
 
   places.town.forEach((p, i) => point(`town[${i}]`, p));
   point('lodestar', places.lodestar);
-  point('upgradeNpc.pos', places.upgradeNpc.pos);
+  if (places.upgradeNpc !== undefined) point('upgradeNpc.pos', places.upgradeNpc.pos);
   places.shopSpots.forEach((p, i) => point(`shopSpots[${i}]`, p));
+  // the places a bot holds stand 8 m apart (`PlaceBook`): two closer than that are never held at once
+  const held: Array<[string, Vec3]> = [...places.town.map((p, i): [string, Vec3] => [`town[${i}]`, p]), ...places.shopSpots.map((p, i): [string, Vec3] => [`shopSpots[${i}]`, p])];
+  held.forEach(([a, p], i) => held.slice(i + 1).forEach(([b, q]) => {
+    if (Math.hypot(p[0] - q[0], p[2] - q[2]) < 8) problems.push(`${a} and ${b} are under 8 m apart: never held at once`);
+  }));
   for (const [name, points] of Object.entries(places.routes)) {
     points.forEach((p, i) => point(`routes.${name}[${i}]`, p));
     for (let i = 1; i < points.length; i++) leg(`routes.${name} leg ${i}`, points[i - 1]!, points[i]!);
