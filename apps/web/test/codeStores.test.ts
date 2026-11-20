@@ -143,3 +143,17 @@ it('maps the SQL answers to the nine refusals', () => {
     [-1]: 'unknown', [-2]: 'expired', [-3]: 'inactive', [-4]: 'claimed', [-5]: 'key_used', [-6]: 'mine', [-7]: 'not_listed', [-8]: 'lower_vip', [-9]: 'confirm',
   });
 });
+
+it('keeps a code bound, shows it in the offer and the list, and mails its items bound (owner 2026-11-20)', async () => {
+  const id = await make({ bound: true, keys: ['BOUND1'] });
+  await make({ keys: ['LOOSE1'] });
+  expect(await codes.check('tester1', 'BOUND1')).toMatchObject({ ok: true, offer: { bound: true } });
+  expect(await codes.check('tester1', 'LOOSE1')).toMatchObject({ ok: true, offer: { bound: false } });
+  expect((await codes.list()).find((c) => c.id === id)).toMatchObject({ bound: true });
+  const done = await redeem('tester1', 'BOUND1', 'r1');
+  if (!done.ok) throw new Error('not redeemed');
+  const use = (await codes.pendingOne(done.useId))!;
+  expect(use.bound).toBe(true);
+  await codes.sendUse(use, 'Code reward #1', 'text');
+  expect(codes.mails.every((m) => m.bound)).toBe(true);
+});

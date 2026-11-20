@@ -186,6 +186,12 @@ IF OBJECT_ID(N'dbo.WEB_CODE', N'U') IS NULL
 			AND (maxUses IS NULL OR maxUses >= 1))
 	)
 GO
+-- 2026-11-20 (owner, "Bound (can't trade)"): a bound code's items are mailed with the game's binds flag
+-- (CItemElem::binds, 0x02): IsBinds() then refuses them in a trade, a drop, a mail, a private shop and the guild bank.
+-- Added to a WEB_CODE made before, as off.
+IF COL_LENGTH(N'dbo.WEB_CODE', N'bound') IS NULL
+	ALTER TABLE dbo.WEB_CODE ADD bound bit NOT NULL CONSTRAINT DF_WEB_CODE_bound DEFAULT 0
+GO
 IF OBJECT_ID(N'dbo.WEB_CODE_ITEM', N'U') IS NULL
 	CREATE TABLE dbo.WEB_CODE_ITEM (
 		codeId int NOT NULL,
@@ -791,12 +797,13 @@ CREATE PROCEDURE dbo.usp_WebCodeCheck
 AS
 SET NOCOUNT ON
 DECLARE @now datetime2(0), @keyId int, @codeId int, @usedBy varchar(32), @kind char(1), @label varchar(64), @vipLevel tinyint,
-	@vipDays smallint, @maxUses int, @uses int, @expiresAt datetime2(0), @isOn bit, @liveLevel tinyint, @liveEnds datetime2(0), @result int
+	@vipDays smallint, @maxUses int, @uses int, @expiresAt datetime2(0), @isOn bit, @liveLevel tinyint, @liveEnds datetime2(0), @result int,
+	@bound bit
 SET @now = SYSUTCDATETIME()
 SELECT @keyId = id, @codeId = codeId, @usedBy = usedBy FROM dbo.WEB_CODE_KEY WHERE keyText = @key
 IF @keyId IS NOT NULL
 	SELECT @kind = kind, @label = label, @vipLevel = vipLevel, @vipDays = vipDays, @maxUses = maxUses, @uses = uses,
-		@expiresAt = expiresAt, @isOn = isOn
+		@expiresAt = expiresAt, @isOn = isOn, @bound = bound
 	FROM dbo.WEB_CODE WHERE id = @codeId
 SELECT @liveLevel = level, @liveEnds = endsAt FROM dbo.WEB_VIP WHERE account = @account AND endsAt > @now
 SET @result = CASE
@@ -812,7 +819,7 @@ SET @result = CASE
 	ELSE 1 END
 SELECT @result AS result, CASE WHEN @result = -1 THEN NULL ELSE @codeId END AS codeId, @label AS label, @vipLevel AS vipLevel,
 	@vipDays AS vipDays, CONVERT(varchar(19), @expiresAt, 126) + 'Z' AS expiresAt,
-	@liveLevel AS liveLevel, CONVERT(varchar(19), @liveEnds, 126) + 'Z' AS liveEndsAt
+	@liveLevel AS liveLevel, CONVERT(varchar(19), @liveEnds, 126) + 'Z' AS liveEndsAt, @bound AS bound
 SELECT itemId, count FROM dbo.WEB_CODE_ITEM WHERE codeId = @codeId AND @result <> -1 ORDER BY slot
 GO
 
@@ -832,7 +839,7 @@ SET XACT_ABORT ON
 DECLARE @now datetime2(0), @useId int, @keyId int, @codeId int, @usedBy varchar(32), @kind char(1), @label varchar(64),
 	@vipLevel tinyint, @vipDays smallint, @maxUses int, @uses int, @expiresAt datetime2(0), @isOn bit, @curLevel tinyint,
 	@curEnds datetime2(0), @liveLevel tinyint, @liveEnds datetime2(0), @result int, @start datetime2(0), @ends datetime2(0),
-	@replacedLevel tinyint, @replacedEnds datetime2(0), @delivered datetime2(0)
+	@replacedLevel tinyint, @replacedEnds datetime2(0), @delivered datetime2(0), @bound bit
 SET @now = SYSUTCDATETIME()
 -- an answer lost on the way: the same press sent again gets the first answer back
 SELECT @useId = id FROM dbo.WEB_CODE_USE WHERE account = @account AND requestId = @requestId
@@ -842,7 +849,7 @@ BEGIN
 	SELECT @keyId = id, @codeId = codeId, @usedBy = usedBy FROM dbo.WEB_CODE_KEY WITH (UPDLOCK, HOLDLOCK) WHERE keyText = @key
 	IF @keyId IS NOT NULL
 		SELECT @kind = kind, @label = label, @vipLevel = vipLevel, @vipDays = vipDays, @maxUses = maxUses, @uses = uses,
-			@expiresAt = expiresAt, @isOn = isOn
+			@expiresAt = expiresAt, @isOn = isOn, @bound = bound
 		FROM dbo.WEB_CODE WITH (UPDLOCK, HOLDLOCK) WHERE id = @codeId
 	-- the same press may have won the race while this one waited for the locks
 	SELECT @useId = id FROM dbo.WEB_CODE_USE WHERE account = @account AND requestId = @requestId
@@ -868,7 +875,7 @@ BEGIN
 			ROLLBACK
 			SELECT @result AS result, CAST(NULL AS int) AS useId, CASE WHEN @result = -1 THEN NULL ELSE @codeId END AS codeId,
 				@label AS label, @vipLevel AS vipLevel, @vipDays AS vipDays, CONVERT(varchar(19), @expiresAt, 126) + 'Z' AS expiresAt,
-				@liveLevel AS liveLevel, CONVERT(varchar(19), @liveEnds, 126) + 'Z' AS liveEndsAt
+				@liveLevel AS liveLevel, CONVERT(varchar(19), @liveEnds, 126) + 'Z' AS liveEndsAt, @bound AS bound
 			SELECT itemId, count FROM dbo.WEB_CODE_ITEM WHERE codeId = @codeId AND @result <> -1 ORDER BY slot
 			RETURN
 		END
@@ -899,7 +906,7 @@ END
 -- the answer of a use: 1 for the one just made, 3 for one made before with this request id
 SELECT CASE WHEN @result = 1 THEN 1 ELSE 3 END AS result, u.id AS useId, c.id AS codeId, c.label, c.vipLevel, c.vipDays,
 	CONVERT(varchar(19), c.expiresAt, 126) + 'Z' AS expiresAt,
-	v.level AS liveLevel, CONVERT(varchar(19), v.endsAt, 126) + 'Z' AS liveEndsAt
+	v.level AS liveLevel, CONVERT(varchar(19), v.endsAt, 126) + 'Z' AS liveEndsAt, c.bound
 FROM dbo.WEB_CODE_USE u
 JOIN dbo.WEB_CODE c ON c.id = u.codeId
 LEFT JOIN dbo.WEB_VIP v ON v.account = u.account AND v.endsAt > SYSUTCDATETIME()
@@ -917,7 +924,7 @@ CREATE PROCEDURE dbo.usp_AdminCodeAdd
 	@label varchar(64), @kind char(1), @vipLevel tinyint, @vipDays smallint, @maxUses int, @expiresAt datetime2(0), @admin varchar(32),
 	@item1 int = 0, @count1 int = 0, @item2 int = 0, @count2 int = 0, @item3 int = 0, @count3 int = 0,
 	@item4 int = 0, @count4 int = 0, @item5 int = 0, @count5 int = 0, @item6 int = 0, @count6 int = 0,
-	@keys xml, @accounts xml = NULL
+	@keys xml, @accounts xml = NULL, @bound bit = 0
 AS
 SET NOCOUNT ON
 SET XACT_ABORT ON
@@ -967,8 +974,8 @@ BEGIN
 	SELECT -2 AS result, CAST(NULL AS int) AS id, @unknown AS detail
 	RETURN
 END
-INSERT dbo.WEB_CODE (label, kind, vipLevel, vipDays, maxUses, expiresAt, createdBy)
-VALUES (@label, @kind, @vipLevel, @vipDays, @maxUses, @expiresAt, @admin)
+INSERT dbo.WEB_CODE (label, kind, vipLevel, vipDays, maxUses, expiresAt, createdBy, bound)
+VALUES (@label, @kind, @vipLevel, @vipDays, @maxUses, @expiresAt, @admin, ISNULL(@bound, 0))
 SET @id = SCOPE_IDENTITY()
 INSERT dbo.WEB_CODE_ITEM (codeId, slot, itemId, count) SELECT @id, slot, itemId, count FROM @itemList
 INSERT dbo.WEB_CODE_KEY (codeId, keyText) SELECT @id, keyText FROM @keyList
@@ -986,7 +993,7 @@ CREATE PROCEDURE dbo.usp_AdminCodeList
 AS
 SET NOCOUNT ON
 SELECT c.id, c.label, c.kind, c.vipLevel, c.vipDays, c.maxUses, c.uses, CONVERT(varchar(19), c.expiresAt, 126) + 'Z' AS expiresAt,
-	c.isOn, CONVERT(varchar(19), c.createdAt, 126) + 'Z' AS createdAt, c.createdBy,
+	c.isOn, CONVERT(varchar(19), c.createdAt, 126) + 'Z' AS createdAt, c.createdBy, c.bound,
 	(SELECT COUNT(*) FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id) AS keysTotal,
 	(SELECT COUNT(*) FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id AND k.usedBy IS NULL) AS keysUnused,
 	CASE WHEN c.kind <> 'K' THEN (SELECT TOP 1 k.keyText FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id ORDER BY k.id) END AS firstKey
@@ -1003,7 +1010,7 @@ CREATE PROCEDURE dbo.usp_AdminCodeGet
 AS
 SET NOCOUNT ON
 SELECT c.id, c.label, c.kind, c.vipLevel, c.vipDays, c.maxUses, c.uses, CONVERT(varchar(19), c.expiresAt, 126) + 'Z' AS expiresAt,
-	c.isOn, CONVERT(varchar(19), c.createdAt, 126) + 'Z' AS createdAt, c.createdBy,
+	c.isOn, CONVERT(varchar(19), c.createdAt, 126) + 'Z' AS createdAt, c.createdBy, c.bound,
 	(SELECT COUNT(*) FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id) AS keysTotal,
 	(SELECT COUNT(*) FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id AND k.usedBy IS NULL) AS keysUnused,
 	CASE WHEN c.kind <> 'K' THEN (SELECT TOP 1 k.keyText FROM dbo.WEB_CODE_KEY k WHERE k.codeId = c.id ORDER BY k.id) END AS firstKey
@@ -1064,7 +1071,7 @@ AS
 SET NOCOUNT ON
 DECLARE @page TABLE (id int NOT NULL PRIMARY KEY, codeId int NOT NULL)
 INSERT @page (id, codeId) SELECT TOP (@max) id, codeId FROM dbo.WEB_CODE_USE WHERE deliveredAt IS NULL AND id > @afterId ORDER BY id
-SELECT u.id, u.codeId, c.label, u.account, u.idPlayer
+SELECT u.id, u.codeId, c.label, u.account, u.idPlayer, c.bound
 FROM @page p JOIN dbo.WEB_CODE_USE u ON u.id = p.id JOIN dbo.WEB_CODE c ON c.id = u.codeId
 ORDER BY u.id
 SELECT i.codeId, i.slot, i.itemId, i.count FROM dbo.WEB_CODE_ITEM i WHERE i.codeId IN (SELECT codeId FROM @page) ORDER BY i.codeId, i.slot
@@ -1077,7 +1084,7 @@ CREATE PROCEDURE dbo.usp_AdminCodePendingOne
 	@useId int
 AS
 SET NOCOUNT ON
-SELECT u.id, u.codeId, c.label, u.account, u.idPlayer
+SELECT u.id, u.codeId, c.label, u.account, u.idPlayer, c.bound
 FROM dbo.WEB_CODE_USE u JOIN dbo.WEB_CODE c ON c.id = u.codeId
 WHERE u.id = @useId AND u.deliveredAt IS NULL
 SELECT i.codeId, i.slot, i.itemId, i.count
@@ -1270,11 +1277,14 @@ GO
 CREATE PROCEDURE dbo.usp_AdminCodeMailSend
 	@useId int, @account varchar(32), @idPlayer char(7), @title varchar(128), @text varchar(255),
 	@item1 int = 0, @count1 int = 0, @item2 int = 0, @count2 int = 0, @item3 int = 0, @count3 int = 0,
-	@item4 int = 0, @count4 int = 0, @item5 int = 0, @count5 int = 0, @item6 int = 0, @count6 int = 0
+	@item4 int = 0, @count4 int = 0, @item5 int = 0, @count5 int = 0, @item6 int = 0, @count6 int = 0,
+	@bound bit = 0
 AS
 SET NOCOUNT ON
 SET XACT_ABORT ON
-DECLARE @to char(7), @name varchar(32), @tmCreate int, @nMail int, @slot int, @item int, @count int
+DECLARE @to char(7), @name varchar(32), @tmCreate int, @nMail int, @slot int, @item int, @count int, @flag int
+-- 2026-11-20: a bound code's items carry CItemElem::binds (0x02), as MAIL_TBL.byFlag (GetItemFromMail reads it back)
+SET @flag = CASE WHEN @bound = 1 THEN 2 ELSE 0 END
 BEGIN TRANSACTION
 IF EXISTS (SELECT 1 FROM dbo.WEB_CODE_SENT WITH (UPDLOCK, HOLDLOCK) WHERE useId = @useId)
 BEGIN
@@ -1305,7 +1315,8 @@ BEGIN
 	BEGIN
 		SELECT @nMail = ISNULL(MAX(nMail), 0) + 1 FROM dbo.MAIL_TBL WITH (UPDLOCK, HOLDLOCK) WHERE serverindex = '51'
 		EXEC dbo.MAIL_STR @iGu = 'A1', @nMail = @nMail, @serverindex = '51', @idReceiver = @to, @idSender = '0000000',
-			@nGold = 0, @tmCreate = @tmCreate, @byRead = 0, @szTitle = @title, @szText = @text, @dwItemId = @item, @nItemNum = @count
+			@nGold = 0, @tmCreate = @tmCreate, @byRead = 0, @szTitle = @title, @szText = @text, @dwItemId = @item, @nItemNum = @count,
+			@byFlag = @flag
 	END
 	SET @slot = @slot + 1
 END

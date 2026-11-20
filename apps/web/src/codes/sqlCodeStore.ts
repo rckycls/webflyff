@@ -48,7 +48,7 @@ function answerOf(result: sql.IProcedureResult<Row>): { code: number; useId: num
   const codeId = numOrNull(row.codeId);
   const offer: CodeOffer | null = codeId === null ? null : {
     codeId, label: text(row.label), vipLevel: num(row.vipLevel), vipDays: num(row.vipDays), expiresAt: text(row.expiresAt),
-    items: rowsOf(result, 1).map(item),
+    items: rowsOf(result, 1).map(item), bound: bool(row.bound),
   };
   const liveLevel = numOrNull(row.liveLevel);
   const vip: LiveVip | null = liveLevel === null || liveLevel === 0 ? null : { level: liveLevel, endsAt: text(row.liveEndsAt) };
@@ -100,7 +100,7 @@ function codeRow(r: Row, items: Map<number, CodeItem[]>): CodeRow {
   return {
     id, label: text(r.label), kind: text(r.kind) as CodeKind, vipLevel: num(r.vipLevel), vipDays: num(r.vipDays), maxUses: numOrNull(r.maxUses),
     uses: num(r.uses), keysTotal: num(r.keysTotal), keysUnused: num(r.keysUnused), firstKey: textOrNull(r.firstKey), expiresAt: text(r.expiresAt),
-    on: bool(r.isOn), createdAt: text(r.createdAt), createdBy: text(r.createdBy), items: items.get(id) ?? [],
+    on: bool(r.isOn), createdAt: text(r.createdAt), createdBy: text(r.createdBy), items: items.get(id) ?? [], bound: bool(r.bound),
   };
 }
 
@@ -118,6 +118,7 @@ function pendingOf(result: sql.IProcedureResult<Row>): PendingUse[] {
   const items = itemsByCode(rowsOf(result, 1));
   return rowsOf(result, 0).map((r) => ({
     id: num(r.id), codeId: num(r.codeId), label: text(r.label), account: text(r.account), idPlayer: text(r.idPlayer), items: items.get(num(r.codeId)) ?? [],
+    bound: bool(r.bound),
   }));
 }
 
@@ -132,7 +133,8 @@ export function sqlCodeAdminStore(settings: WebConfig['sql'], login: AdminConfig
           .input('vipDays', sql.SmallInt, code.vipDays).input('maxUses', sql.Int, code.maxUses).input('expiresAt', sql.DateTime2(0), new Date(code.expiresAt))
           .input('admin', sql.VarChar(32), code.admin)
           .input('keys', sql.Xml, code.keys.map((k) => `<k>${xmlText(k)}</k>`).join(''))
-          .input('accounts', sql.Xml, code.kind === 'L' ? code.accounts.map((a) => `<a>${xmlText(a)}</a>`).join('') : null);
+          .input('accounts', sql.Xml, code.kind === 'L' ? code.accounts.map((a) => `<a>${xmlText(a)}</a>`).join('') : null)
+          .input('bound', sql.Bit, code.bound === true);
         stacks.forEach((s, i) => r.input(`item${i + 1}`, sql.Int, s.itemId).input(`count${i + 1}`, sql.Int, s.count));
         return r;
       }))[0] ?? {};
@@ -192,7 +194,8 @@ export function sqlCodeMailStore(settings: WebConfig['sql'], login: AdminConfig[
     async sendUse(use, title, mailText) {
       const row = rowsOf(await run('usp_AdminCodeMailSend', (r) => {
         r.input('useId', sql.Int, use.id).input('account', sql.VarChar(32), use.account).input('idPlayer', sql.Char(7), use.idPlayer)
-          .input('title', sql.VarChar(128), title.slice(0, 128)).input('text', sql.VarChar(255), mailText.slice(0, 255));
+          .input('title', sql.VarChar(128), title.slice(0, 128)).input('text', sql.VarChar(255), mailText.slice(0, 255))
+          .input('bound', sql.Bit, use.bound);
         use.items.slice(0, CODE_SLOTS).forEach((s, i) => r.input(`item${i + 1}`, sql.Int, s.itemId).input(`count${i + 1}`, sql.Int, s.count));
         return r;
       }))[0];

@@ -21,6 +21,7 @@ import type { CodeRedeemerHost, CodeView } from './codeRedeemer';
 
 const EDIT = 'WndEditTile00.tga';
 export const PASTE_BY_HAND = 'Long-press the box and choose Paste.';
+export const BOUND_LINE = 'Bound to your character: these items can\'t be traded.';
 const HINT = 'Type or paste your code, then press Check.';
 
 export interface RedeemCodeHost extends CodeRedeemerHost {
@@ -199,6 +200,8 @@ export class RedeemCodeWindow {
         row.prepend(this.icon(item.iconUrl));
         lines.push(row);
       }
+      // owner 2026-11-20: a bound code's items carry the game's binds flag
+      if (offer.bound && offer.items.length > 0) lines.push(this.line(BOUND_LINE, 'is-quiet'));
       if (view.needed > 0) {
         const short = view.free < view.needed;
         lines.push(this.line(`Needs ${view.needed} free bag slot${view.needed === 1 ? '' : 's'} (you have ${view.free}).`, short ? 'is-short' : 'is-quiet'));

@@ -64,3 +64,17 @@ it('sends a code mail once, keyed on the use, as the gift boxes are', () => {
   expect(send).toContain("@serverindex = '51'");
   expect(send).toContain("@iGu = 'A1'");
 });
+
+it('mails a bound code\'s items with the game\'s binds flag (owner 2026-11-20: "Bound (can\'t trade)")', () => {
+  expect(sql).toContain("IF COL_LENGTH(N'dbo.WEB_CODE', N'bound') IS NULL");
+  expect(body('usp_AdminCodeAdd')).toContain('@bound bit');
+  expect(body('usp_AdminCodeList')).toContain('c.bound');
+  expect(body('usp_AdminCodePending')).toContain('c.bound');
+  expect(body('usp_AdminCodePendingOne')).toContain('c.bound');
+  expect(body('usp_WebCodeCheck')).toContain('@bound AS bound');
+  // CItemElem::binds = 0x02 (_Common/Item.h:119): IsBinds() then blocks trade, drop, post, private shop, guild bank
+  // (EXEC takes no expression: the flag goes through a variable)
+  const send = body('usp_AdminCodeMailSend');
+  expect(send).toContain('SET @flag = CASE WHEN @bound = 1 THEN 2 ELSE 0 END');
+  expect(send).toContain('@byFlag = @flag');
+});

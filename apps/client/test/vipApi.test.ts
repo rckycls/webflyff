@@ -66,7 +66,7 @@ it('scales a receipt down to 2000 px on its long side, never up', () => {
 });
 
 // 2026-11-20 (redeem codes): the Redeem Code window's two calls
-const OFFER = { codeId: 3, label: 'Launch', vipLevel: 1, vipDays: 30, expiresAt: '2026-12-15T00:00:00Z', items: [] };
+const OFFER = { codeId: 3, label: 'Launch', vipLevel: 1, vipDays: 30, expiresAt: '2026-12-15T00:00:00Z', items: [], bound: false };
 
 it('checks a code and reads the offer, the live VIP and whether it replaces it', async () => {
   const api = new VipApi((async () => json(200, { ok: true, offer: OFFER, vip: { level: 1, endsAt: '2026-11-30T00:00:00Z' }, replaces: false })) as unknown as typeof fetch);
@@ -93,4 +93,13 @@ it('sends a redeem with the code, the character, the request id and the confirm,
   expect((init?.headers as Record<string, string>)['X-Site-Token']).toBe('tok');
   const offline = new VipApi((async () => { throw new TypeError('offline'); }) as unknown as typeof fetch);
   await expect(offline.codeRedeem('WELCOME2026', 1, 'press-2', false)).resolves.toEqual({ ok: false, error: 'unreachable' });
+});
+
+it('reads whether a code\'s items come bound (owner 2026-11-20)', async () => {
+  const api = new VipApi((async () => json(200, { ok: true, offer: { ...OFFER, bound: true }, vip: null, replaces: false })) as unknown as typeof fetch);
+  const answer = await api.codeCheck('BOUND123');
+  expect(answer.ok && answer.value.offer.bound).toBe(true);
+  const loose = new VipApi((async () => json(200, { ok: true, offer: OFFER, vip: null, replaces: false })) as unknown as typeof fetch);
+  const plain = await loose.codeCheck('LOOSE123');
+  expect(plain.ok && plain.value.offer.bound).toBe(false);
 });

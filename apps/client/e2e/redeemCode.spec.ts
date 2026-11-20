@@ -14,7 +14,7 @@ import { MADRIGAL, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, playGateway, self,
 test.describe.configure({ timeout: 120_000 });
 
 const WOODEN_SWORD = 21;
-const OFFER = { codeId: 3, label: 'Launch', vipLevel: 2, vipDays: 7, expiresAt: '2026-12-15T12:00:00Z', items: [{ itemId: WOODEN_SWORD, count: 1 }] };
+const OFFER = { codeId: 3, label: 'Launch', vipLevel: 2, vipDays: 7, expiresAt: '2026-12-15T12:00:00Z', items: [{ itemId: WOODEN_SWORD, count: 1 }], bound: false };
 
 function scriptOf(): WorldScript {
   const own = newVagrantOwn();
