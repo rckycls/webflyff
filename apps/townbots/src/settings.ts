@@ -10,6 +10,10 @@ export type Group = 'rookie' | 'first' | 'veteran';
 export type Role = 'farming' | 'wandering' | 'upgrading' | 'shop' | 'afk';
 export const ROLES: readonly Role[] = ['farming', 'wandering', 'upgrading', 'shop', 'afk'];
 const GROUPS: readonly Group[] = ['rookie', 'first', 'veteran'];
+/** Each group's levels and job ids: [min level, max level, min job, max job]. */
+const GROUP_RANGES: Record<Group, [number, number, number, number]> = {
+  rookie: [1, 15, 0, 0], first: [16, 60, 1, 5], veteran: [61, 150, 6, 15],
+};
 
 /** The look the create screen offers: the hair's colour follows the style there. */
 export interface BotLook { sex: 0 | 1; hair: number; face: number }
@@ -45,6 +49,8 @@ export interface ItemPlan {
   /** What a shop may sell, at the NPC's price. */
   shop: Array<{ itemId: number; price: number }>;
   shopTitles: string[];
+  /** The bots' gear: any of these in a bot's bag and not worn is put on as it enters (never a shop item). */
+  gear: number[];
 }
 
 /** Setup's job changes and skill lines, by the bot's final job id. */
@@ -121,16 +127,18 @@ function bot(value: unknown, path: string): BotSpec {
   if (!hasOneCapital(name)) fail(`${path}.name`, 'must have exactly one capital letter');
   const group = b.group as Group;
   if (!GROUPS.includes(group)) fail(`${path}.group`, `must be one of ${GROUPS.join(', ')}`);
-  const level = int(b.level, `${path}.level`, 1, 150);
-  if (group === 'veteran' && level < 60) fail(`${path}.level`, 'of a veteran must be 60 or more');
+  // the GM /level command's own ranges (FuncTextCmd.cpp TextCmd_Level): up to 15 is a Vagrant, 16-60 a first job
+  // (JOB_MERCENARY..JOB_PUPPETEER), 61 and up a second job (JOB_KNIGHT..JOB_DOPPLER)
+  const [minLevel, maxLevel, minJob, maxJob] = GROUP_RANGES[group];
+  const level = int(b.level, `${path}.level`, minLevel, maxLevel);
+  const job = int(b.job, `${path}.job`, minJob, maxJob);
   const pin = str(b.bankPin, `${path}.bankPin`);
   if (!/^\d{4}$/.test(pin)) fail(`${path}.bankPin`, 'must be 4 digits');
   const look = obj(b.look, `${path}.look`);
   return {
     account: str(b.account, `${path}.account`).trim().toLowerCase(),
     password: str(b.password, `${path}.password`),
-    bankPin: pin, name, group, level,
-    job: int(b.job, `${path}.job`, 0),
+    bankPin: pin, name, group, level, job,
     look: { sex: int(look.sex, `${path}.look.sex`, 0, 1) as 0 | 1, hair: int(look.hair, `${path}.look.hair`, 0), face: int(look.face, `${path}.look.face`, 0) },
   };
 }
@@ -167,14 +175,22 @@ function places(value: unknown, path: string): Places {
 function items(value: unknown, path: string): ItemPlan {
   const it = obj(value, path);
   const upgrade = obj(it.upgrade, `${path}.upgrade`);
+  const shop = arr(it.shop, `${path}.shop`).map((value, i) => {
+    const s = obj(value, `${path}.shop[${i}]`);
+    return { itemId: int(s.itemId, `${path}.shop[${i}].itemId`, 1), price: int(s.price, `${path}.shop[${i}].price`, 1) };
+  });
+  const gear = it.gear === undefined ? [] : ints(it.gear, `${path}.gear`);
+  const spares = ints(upgrade.spares, `${path}.upgrade.spares`);
+  // a worn shop item or upgrade spare would be sold or broken off the bot
+  gear.forEach((id, i) => {
+    if (shop.some((s) => s.itemId === id) || spares.includes(id)) fail(`${path}.gear[${i}]`, 'is also a shop item or an upgrade spare');
+  });
   return {
     potions: ints(it.potions, `${path}.potions`),
-    upgrade: { materials: ints(upgrade.materials, `${path}.upgrade.materials`), spares: ints(upgrade.spares, `${path}.upgrade.spares`) },
-    shop: arr(it.shop, `${path}.shop`).map((value, i) => {
-      const s = obj(value, `${path}.shop[${i}]`);
-      return { itemId: int(s.itemId, `${path}.shop[${i}].itemId`, 1), price: int(s.price, `${path}.shop[${i}].price`, 1) };
-    }),
+    upgrade: { materials: ints(upgrade.materials, `${path}.upgrade.materials`), spares },
+    shop,
     shopTitles: arr(it.shopTitles, `${path}.shopTitles`).map((v, i) => str(v, `${path}.shopTitles[${i}]`)),
+    gear,
   };
 }
 
