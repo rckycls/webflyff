@@ -66,6 +66,7 @@ export function statusTab(nav) {
         el('div', { class: 'hero-stats' },
           el('div', { class: 'hero-stat' }, el('strong', { text: `${upCount}/${s.servers.length}` }), el('span', { text: 'servers up' })),
           el('div', { class: 'hero-stat' }, el('strong', { text: s.players === null ? '–' : String(s.players) }), el('span', { text: 'players online' })),
+          el('div', { class: 'hero-stat' }, el('strong', { text: s.bots == null ? '–' : String(s.bots) }), el('span', { text: 'bots online' })),
           el('div', { class: 'hero-stat' }, el('strong', { text: s.charactersOpen ? 'Open' : 'Locked' }), el('span', { text: 'character edits' })))));
       fill(stats,
         statCard('server', 'purple', `${upCount}/${s.servers.length}`, 'Game servers up'),
@@ -81,8 +82,9 @@ export function statusTab(nav) {
       if (s.online === null) {
         fill(online, el('p', { class: 'small', text: s.stale ? 'The World server is not up: the online flags are stale until it starts.' : 'SQL Server did not answer.' }));
       } else {
+        // the players first, then the accounts left out of the counts (bots), marked (the list comes in that order)
         fill(online, table(['Name', 'Level', 'Account'],
-          s.online.map((c) => [c.name, String(c.level), c.account]), (i) => nav.openCharacter(s.online[i].idPlayer)));
+          s.online.map((c) => [c.counted === false ? `${c.name} (bot)` : c.name, String(c.level), c.account]), (i) => nav.openCharacter(s.online[i].idPlayer)));
       }
       checked.textContent = `Checked ${new Date().toLocaleTimeString()}.`;
       fill(logins, await recentLogins(background));

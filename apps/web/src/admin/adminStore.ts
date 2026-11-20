@@ -68,6 +68,8 @@ export interface CharacterRow {
   worldId: number;
   /** m_chAuthority: the character's own letter (the account's counts instead unless it is 'F' or a VIP letter). */
   authority: string;
+  /** Counted as a player: false for an account listed in WEB_NOT_COUNTED (the online list sets it; other lists leave it out). */
+  counted?: boolean;
 }
 
 export interface CharacterDetail extends CharacterRow {

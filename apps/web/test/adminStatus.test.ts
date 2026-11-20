@@ -87,3 +87,16 @@ it('answers without SQL Server, with no players count', async () => {
   expect(status.status).toBe(200);
   expect(status.body).toMatchObject({ sql: false, players: null, online: null });
 });
+
+it('counts only the counted characters as players, and the others as bots', async () => {
+  const store = new MemoryAdminStore({ characters: [
+    memoryCharacter('0000001', 'Hero', 'tester1', { online: true }),
+    memoryCharacter('0000002', 'Other', 'tester2', { online: true }),
+    memoryCharacter('0000003', 'abCd', 'testbot01', { online: true, counted: false }),
+  ] });
+  const deps = testDeps({ store });
+  const status = await STATUS_ACTIONS.status({}, testContext(deps), deps);
+  expect(status.body).toMatchObject({ players: 2, bots: 1 });
+  const online = status.body.online as { name: string; counted: boolean }[];
+  expect(online.filter((c) => !c.counted).map((c) => c.name)).toEqual(['abCd']);
+});
