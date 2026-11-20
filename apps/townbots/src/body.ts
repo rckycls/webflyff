@@ -159,10 +159,13 @@ export class BotBody implements BotParts {
   /** The server clock's tick for a behaviour report (`WorldScreen`: `this.entry.clock.tick()`). */
   clockTick(): bigint { return this.entry?.clock.tick() ?? 0n; }
 
-  /** A straight walk to `pos`, as a tap on the ground there (`OwnMover.walkTo`). */
+  /**
+   * A straight walk to `pos`, as a click on the ground there: the destination set and sent (DESTPOS), standing up first
+   * when sitting (`OwnMover.walkTo` with `send`). Auto Play's own short walks keep the screen's way (`headlessHooks`).
+   */
   walkTo(pos: [number, number, number]): void {
     const self = this.self();
-    if (self !== undefined) this.ownMover_?.walkTo(self, pos, false);
+    if (self !== undefined) this.ownMover_?.walkTo(self, pos, true);
   }
 
   /**
