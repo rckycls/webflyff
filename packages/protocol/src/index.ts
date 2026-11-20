@@ -95,3 +95,4 @@ export * from './world/authority'; // 2026-11-17: the authority letters, VIP1-VI
 export * from './world/vipPerks'; // 2026-11-19: the VIP perks' numbers (shop discount, death EXP)
 export * from './world/vipBag'; // 2026-11-19: the VIP bag buttons (sort, penya to Perins)
 export * from './world/teleportWindow'; // custom (owner 2026-11-19): the Teleport window
+export * from './world/quickJobChange'; // custom (owner 2026-11-20): the Quick Job Change window

@@ -60,6 +60,11 @@ export const PacketType = {
    * repo's patches/2026-11-19-teleport-window.patch (`PACKETTYPE_TELEPORT_WINDOW`, `CDPSrvr::OnTeleportWindow`).
    */
   TELEPORT_WINDOW: 0x8fff0120,
+  /**
+   * custom (owner 2026-11-20): the Quick Job Change window's picked job (world/quickJobChange.ts). Not in V15: added by the
+   * outer repo's patches/2026-11-20-quick-job-change.patch (`PACKETTYPE_QUICK_JOB_CHANGE`, `CDPSrvr::OnQuickJobChange`).
+   */
+  QUICK_JOB_CHANGE: 0x8fff0130,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,
