@@ -17,6 +17,7 @@ import { lowHpStop, stopReason } from './stopRules';
 import type { AutoPlayEvent } from './stopRules';
 import { OthersFighting, SkipList, StuckWatch, groundDistance, pickTarget } from './targets';
 import type { TargetMover } from './targets';
+import { pickNearest } from '../combat/attackNearest';
 import { farmBlocked, potsBlocked } from './zones';
 import { pickSupportAction, supportBlocked } from './support';
 import type { SupportInput } from './support';
@@ -210,6 +211,22 @@ export class AutoPlay {
   /** The window changed `settings`: keep them. */
   saved(): void {
     this.hooks.save(this.settings);
+  }
+
+  /**
+   * custom (owner 2026-11-20): the phone Attack button's nearest monster (combat/attackNearest.ts), by the farm bot's own
+   * hooks and its record of who hits what (kept whether the bot runs or not); `lineCheck` false leaves out the obstacle
+   * check, for the button's enabled state each frame. Whether the button may pick at all (town, selection) is the caller's.
+   */
+  nearestMonster(lineCheck: boolean): TargetMover | null {
+    const h = this.hooks, self = h.self();
+    if (self === undefined) return null;
+    const now = h.now(), party = h.partyIds();
+    return pickNearest({
+      self, movers: h.movers(), rankOf: (m) => h.rankOf(m), attackable: (m) => h.attackable(m),
+      busy: (m) => this.fighting.busy(m, now, self.objectId, party, (id) => h.isPlayer(id)), now,
+      ...(lineCheck ? { blocked: (m: TargetMover) => h.lineBlocked(m) } : {}),
+    });
   }
 
   /** Where Start was pressed (the radius is around it) while the farm bot runs; null otherwise. */
