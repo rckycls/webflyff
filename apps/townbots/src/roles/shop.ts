@@ -2,8 +2,8 @@
 // (the Flaris NPC's), and opens with a friendly title. Nothing outside the list is ever sold, and nothing is bought.
 // Sold out: the shop closes and the role is dropped until a refill; at the end of its time it just closes.
 import type { Vec3 } from '@flyffweb/protocol';
-import { ARRIVE_M } from './route';
-import { groundDistance } from './types';
+import { TownWalk } from './route';
+
 import type { RoleIo, RoleRunner, RoleStatus } from './types';
 
 /** Items a bot shop shows at once. */
@@ -14,7 +14,7 @@ const MAX_COUNT = 32767;
 export class ShopRole implements RoleRunner {
   readonly role = 'shop' as const;
   private readonly until: number;
-  private walked = false;
+  private walk: TownWalk | null = null;
   private open = false;
   /** The registered items' object ids. */
   private registered: number[] = [];
@@ -29,13 +29,14 @@ export class ShopRole implements RoleRunner {
   }
 
   tick(): RoleStatus {
-    if (!this.walked) {
-      this.io.walkTo(this.spot);
-      this.walked = true;
-    }
     if (!this.open) {
-      const pos = this.io.position();
-      if (pos === undefined || groundDistance(pos, this.spot) > ARRIVE_M) return this.io.now() >= this.until ? 'done' : 'running';
+      this.walk ??= new TownWalk(this.spot, this.io);
+      const status = this.walk.tick();
+      if (status === 'failed') {
+        this.io.log('cannot reach the shop spot: another role');
+        return 'done';
+      }
+      if (status !== 'arrived') return this.io.now() >= this.until ? 'done' : 'running';
       return this.openShop();
     }
     if (this.registered.every((id) => (this.io.bag().get(id)?.count ?? 0) <= 0)) {

@@ -79,6 +79,17 @@ async function main(): Promise<void> {
     const route = places.routes[spot.route]!;
     leg(`spot ${spot.id}: last leg`, route[route.length - 1]!, spot.center);
   }
+  // in town a bot walks straight from wherever it is to its next place: every town place to every other, the lodestar
+  // (where it revives), the upgrade NPC, the shop spots and the routes' first points
+  const town: Array<[string, Vec3]> = [
+    ...places.town.map((p, i): [string, Vec3] => [`town[${i}]`, p]),
+    ['lodestar', places.lodestar], ['upgradeNpc', places.upgradeNpc.pos],
+    ...places.shopSpots.map((p, i): [string, Vec3] => [`shopSpots[${i}]`, p]),
+    ...Object.entries(places.routes).map(([name, points]): [string, Vec3] => [`routes.${name}[0]`, points[0]!]),
+  ];
+  for (let i = 0; i < town.length; i++) {
+    for (let j = 0; j < town.length; j++) if (i !== j) leg(`${town[i]![0]} to ${town[j]![0]}`, town[i]![1], town[j]![1]);
+  }
   for (const line of problems) console.log(line);
   console.log(problems.length === 0 ? 'all clear' : `${problems.length} problems`);
   process.exitCode = problems.length === 0 ? 0 : 1;

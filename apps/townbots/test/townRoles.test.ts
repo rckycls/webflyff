@@ -28,7 +28,7 @@ describe('WanderRole', () => {
 describe('AfkRole', () => {
   it('goes to one town point and stays there for the whole role', () => {
     const io = fakeIo(() => 0.1);
-    const role = new AfkRole(TOWN, io, () => 60 * MIN);
+    const role = new AfkRole([[50, 0, 50], [60, 0, 60]], io, () => 60 * MIN);
     for (let t = 0; t < 60 * MIN; t += 60_000) {
       io.t = t;
       role.tick();
@@ -63,5 +63,43 @@ describe('UpgradeRole', () => {
     io.t = 61_000;
     expect(role.tick()).toBe('done');
     expect(io.dropped).toEqual(['upgrading']);
+  });
+});
+
+describe('town walks that get stuck', () => {
+  /** Ticks every second from `from` for `seconds`. */
+  function tickFor(role: { tick(): string }, io: { t: number }, from: number, seconds: number): string {
+    let status = 'running';
+    for (let s = 0; s <= seconds && status === 'running'; s++) {
+      io.t = from + s * 1000;
+      status = role.tick();
+    }
+    return status;
+  }
+
+  it('an AFK bot that cannot reach its place settles where it is', () => {
+    const io = fakeIo(() => 0.1);
+    io.stuck = true;
+    const role = new AfkRole([[50, 0, 50], [60, 0, 60]], io, () => 60 * MIN);
+    tickFor(role, io, 0, 25);
+    expect(io.isSitting).toBe(true);
+  });
+
+  it('an upgrader that cannot reach the NPC gives the role up', () => {
+    const io = fakeIo(() => 0);
+    io.stuck = true;
+    io.items.set(1, item(1, 4000));
+    io.items.set(2, item(2, 3000, 10));
+    const role = new UpgradeRole([9, 0, 9], { materials: [3000], spares: [4000] }, io, () => 40 * MIN);
+    expect(tickFor(role, io, 0, 25)).toBe('done');
+    expect(io.calls.some((c) => c.startsWith('upgrade'))).toBe(false);
+  });
+
+  it('a wanderer that cannot reach a place stands where it is, then tries another', () => {
+    const io = fakeIo(() => 0.9);
+    io.stuck = true;
+    const role = new WanderRole([[50, 0, 50], [60, 0, 60]], io, () => 30 * MIN, [5]);
+    tickFor(role, io, 0, 100);
+    expect(io.calls.filter((c) => c.startsWith('walk')).length).toBeGreaterThan(1);
   });
 });

@@ -96,3 +96,22 @@ export class RouteWalker {
     this.ask(this.points[this.index]!, now);
   }
 }
+
+/**
+ * A walk to one place in town: the route walker (asked again every few seconds, `failed` after 20 s stuck), and
+ * `arrived` as soon as the bot is within reach, even in the tick that asked for the walk.
+ */
+export class TownWalk {
+  private readonly walker: RouteWalker;
+
+  constructor(private readonly target: Vec3, private readonly io: RoleIo) {
+    this.walker = new RouteWalker([target], io);
+  }
+
+  tick(): WalkStatus {
+    const status = this.walker.tick();
+    const pos = this.io.position();
+    if (status === 'walking' && pos !== undefined && groundDistance(pos, this.target) <= ARRIVE_M) return 'arrived';
+    return status;
+  }
+}

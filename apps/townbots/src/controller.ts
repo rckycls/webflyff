@@ -10,6 +10,7 @@ import { isDie } from '@flyffweb/client/src/world/WorldState';
 import type { BotBody } from './body';
 import { AutoPlayFeed, headlessHooks } from './hooks';
 import { Refusals } from './refusals';
+import { ReviveWatch } from './revive';
 import { RolePlanner } from './roles';
 import { FarmRole, SpotBook } from './roles/farm';
 import { ShopRole } from './roles/shop';
@@ -49,6 +50,9 @@ export class BotController {
   private readonly refusals: Refusals;
   private readonly safety: SafetyNet;
   private elsewhereSaid = false;
+  private readonly revive = new ReviveWatch();
+  /** The role ended with a death: the next one is a switch. */
+  private afterDeath = false;
 
   constructor(readonly body: BotBody, private readonly w: BotWorld) {
     const name = body.spec.name;
@@ -100,6 +104,22 @@ export class BotController {
       return;
     }
     const now = Date.now();
+    // dead, wherever and whatever its role: the role ends, the bot is revived at the lodestar (again while it stays
+    // dead), and takes its next role from there once alive
+    const self = body.self();
+    const dead = self !== undefined && isDie(self);
+    if (this.revive.tick(dead, now)) {
+      body.session?.sendRevivalToLodestar();
+      this.w.log(`${this.name} died: revived at the lodestar`);
+    }
+    if (dead) {
+      if (this.runner !== undefined) {
+        this.runner.stop();
+        this.runner = undefined;
+        this.afterDeath = true;
+      }
+      return;
+    }
     if (this.equipAt !== null && now >= this.equipAt) {
       this.equipAt = null;
       this.putOnGear();
@@ -110,7 +130,8 @@ export class BotController {
       this.w.planner.drop(this.name, 'farming');
     }
     if (this.runner === undefined) {
-      this.nextRole(false);
+      this.nextRole(this.afterDeath);
+      this.afterDeath = false;
       return;
     }
     if (this.runner.tick() === 'done') this.nextRole(true);

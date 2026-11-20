@@ -2,30 +2,24 @@
 // place for the whole role), and upgrading by the upgrade NPC (real tries on the bot's own spare gear: everyone nearby
 // sees the success or fail sparkle the server sends).
 import type { InventoryItem, Vec3 } from '@flyffweb/protocol';
-import { ARRIVE_M } from './route';
-import { between, groundDistance } from './types';
+import { TownWalk } from './route';
+import { between } from './types';
 import type { RoleIo, RoleRunner, RoleStatus } from './types';
 
 const SEC = 1000;
 const MIN = 60 * SEC;
-/** A walk in town with no arrival after this long: another place (ms). */
-const TOWN_WALK_GIVE_UP_MS = 30 * SEC;
 /** The highest upgrade a spare is tried for. */
 const MAX_UPGRADE = 10;
 /** An upgrade with no answer after this long is over (ms). */
 const UPGRADE_ANSWER_MS = 10 * SEC;
 
 const pick = <T>(list: readonly T[], random: () => number): T => list[Math.min(list.length - 1, Math.floor(random() * list.length))]!;
-const near = (io: RoleIo, at: Vec3): boolean => {
-  const pos = io.position();
-  return pos !== undefined && groundDistance(pos, at) <= ARRIVE_M;
-};
 
 export class WanderRole implements RoleRunner {
   readonly role = 'wandering' as const;
   private readonly until: number;
-  private target: Vec3 | null = null;
-  private walkedAt = 0;
+  /** The walk to the next place; one that gets stuck ends where the bot is, which idles there instead. */
+  private walk: TownWalk | null = null;
   /** Idle at a place until then. */
   private idleUntil = 0;
 
@@ -39,20 +33,13 @@ export class WanderRole implements RoleRunner {
       if (this.io.sitting()) this.io.stand();
       return 'done';
     }
-    if (this.target !== null) {
-      if (near(this.io, this.target) || now - this.walkedAt > TOWN_WALK_GIVE_UP_MS) {
-        this.target = null;
-        this.arrive(now);
-      }
-      return 'running';
+    if (this.walk === null) {
+      if (now < this.idleUntil) return 'running';
+      if (this.io.sitting()) this.io.stand();
+      this.walk = new TownWalk(pick(this.town, this.io.random), this.io);
     }
-    if (now < this.idleUntil) return 'running';
-    if (this.io.sitting()) this.io.stand();
-    this.target = pick(this.town, this.io.random);
-    this.walkedAt = now;
-    this.io.walkTo(this.target);
-    if (near(this.io, this.target)) {
-      this.target = null;
+    if (this.walk.tick() !== 'walking') {
+      this.walk = null;
       this.arrive(now);
     }
     return 'running';
@@ -80,7 +67,7 @@ export class WanderRole implements RoleRunner {
 export class AfkRole implements RoleRunner {
   readonly role = 'afk' as const;
   private readonly until: number;
-  private target: Vec3 | null = null;
+  private walk: TownWalk | null = null;
   private settled = false;
 
   constructor(private readonly town: readonly Vec3[], private readonly io: RoleIo, duration: () => number) {
@@ -93,11 +80,9 @@ export class AfkRole implements RoleRunner {
       return 'done';
     }
     if (this.settled) return 'running';
-    if (this.target === null) {
-      this.target = pick(this.town, this.io.random);
-      this.io.walkTo(this.target);
-    }
-    if (near(this.io, this.target)) {
+    this.walk ??= new TownWalk(pick(this.town, this.io.random), this.io);
+    // there, or stuck on the way: it settles where it is
+    if (this.walk.tick() !== 'walking') {
       // two in three sit, the rest just stand there
       if (this.io.random() < 2 / 3) this.io.sit();
       this.settled = true;
@@ -115,7 +100,7 @@ export class AfkRole implements RoleRunner {
 export class UpgradeRole implements RoleRunner {
   readonly role = 'upgrading' as const;
   private readonly until: number;
-  private walked = false;
+  private walk: TownWalk | null = null;
   private arrived = false;
   private nextTry = Infinity;
   /** The try waiting for its answer: the spare as it was, the material's count, when it was sent. */
@@ -137,12 +122,14 @@ export class UpgradeRole implements RoleRunner {
       return 'running';
     }
     if (now >= this.until) return 'done';
-    if (!this.walked) {
-      this.io.walkTo(this.npcPos);
-      this.walked = true;
-    }
     if (!this.arrived) {
-      if (!near(this.io, this.npcPos)) return 'running';
+      this.walk ??= new TownWalk(this.npcPos, this.io);
+      const status = this.walk.tick();
+      if (status === 'failed') {
+        this.io.log('cannot reach the upgrade NPC: another role');
+        return 'done';
+      }
+      if (status !== 'arrived') return 'running';
       this.arrived = true;
       this.nextTry = now + between(this.io.random, MIN, 3 * MIN);
       return 'running';
