@@ -7,7 +7,7 @@
 import type { InventoryItem } from '@flyffweb/protocol';
 import type { BotSpec } from './settings';
 
-/** A hero's job id less this is its second job's (JOB_LORDTEMPLER_HERO 24 is JOB_KNIGHT 6's hero). */
+/** A hero's job id less this is its second job's (JOB_KNIGHT_HERO 24 is JOB_KNIGHT 6's hero). */
 const HERO_FROM_SECOND = 18;
 
 /** The GM lines that give `bot` its level and job, then its job's skill lines (`setup.skillLines`, by final job). */

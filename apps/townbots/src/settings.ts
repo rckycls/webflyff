@@ -143,7 +143,7 @@ function bot(value: unknown, path: string): BotSpec {
   if (!GROUPS.includes(group)) fail(`${path}.group`, `must be one of ${GROUPS.join(', ')}`);
   // the GM /level command's own ranges (FuncTextCmd.cpp TextCmd_Level): up to 15 is a Vagrant, 16-60 a first job
   // (JOB_MERCENARY..JOB_PUPPETEER), 61 and up a second job (JOB_KNIGHT..JOB_DOPPLER); a hero is a second job's hero
-  // (JOB_LORDTEMPLER_HERO..JOB_FLORIST_HERO, 24-31) at 121-129 (MAX_LEGEND_LEVEL), set with `/level <job> <level> 2`
+  // (JOB_KNIGHT_HERO..JOB_ELEMENTOR_HERO, 24-31) at 121-129 (MAX_LEGEND_LEVEL), set with `/level <job> <level> 2`
   const [minLevel, maxLevel, minJob, maxJob] = GROUP_RANGES[group];
   const level = int(b.level, `${path}.level`, minLevel, maxLevel);
   const job = int(b.job, `${path}.job`, minJob, maxJob);
