@@ -6,6 +6,7 @@
 //   reading the rest);
 // - `GET /api/status`: the shared status;
 // - `GET /api/siege/weekly` and `GET /api/siege/ranking?board=&span=`: the Guild Siege answers (siege.ts);
+// - `GET /api/discord`: the home page's Discord button (discord.ts), or `404 {error:'off'}` without one;
 // - `/api/account/*` and `/api/vip*`: Support / VIP (vip/siteVip.ts), or `503 {error:'off'}` without web.config.json's
 //   `vip` section;
 // - anything else: `404 {error:'not_found'}`.
@@ -16,6 +17,7 @@ import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { resolveClientAddress } from '@flyffweb/protocol';
+import type { DiscordCache } from './discord';
 import type { HourlyLimit } from './hourlyLimit';
 import { BROWSER_COOKIE, BROWSER_ID } from './signUpBook';
 import { handleSignUp, MAX_BODY_BYTES } from './signUpHandler';
@@ -27,7 +29,11 @@ import type { StatusCache } from './status';
 /** Support / VIP's routes (vip/siteVip.ts): true when it answered. */
 export type VipRoutes = (req: IncomingMessage, res: ServerResponse, path: string, address: string) => Promise<boolean>;
 
-export type WebServerDeps = SignUpDeps & { status: StatusCache; siege: SiegeCache; ticketsByAddress: HourlyLimit; vip?: VipRoutes };
+export type WebServerDeps = SignUpDeps & {
+  status: StatusCache; siege: SiegeCache; ticketsByAddress: HourlyLimit; vip?: VipRoutes;
+  /** Without web.config.json's `discord` section, none: `/api/discord` is off. */
+  discord?: DiscordCache;
+};
 
 /** Slow clients get this long to send a request (Caddy sends it at once). */
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -119,6 +125,12 @@ export function createWebServer(deps: WebServerDeps): Server {
     }
     if (path === '/api/status' && req.method === 'GET') {
       send(res, 200, await deps.status.get());
+      return;
+    }
+    if (path === '/api/discord' && req.method === 'GET') {
+      const answer = deps.discord === undefined ? 'off' : await deps.discord.get();
+      if (answer === 'off') send(res, 404, { error: 'off' });
+      else send(res, 200, answer);
       return;
     }
     if (path === '/api/siege/weekly' && req.method === 'GET') {

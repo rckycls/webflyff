@@ -7,6 +7,8 @@ import type { ReservedNames } from '@flyffweb/protocol';
 import { parseAdminConfig } from './admin/config';
 import type { AdminConfig } from './admin/config';
 import { hostPort, integer, ipv4, list, object, text } from './configHelpers';
+import { parseDiscordConfig } from './discord';
+import type { DiscordConfig } from './discord';
 import { parseVipConfig } from './vip/vipConfig';
 import type { VipConfig } from './vip/vipConfig';
 import type { HostPort } from './configHelpers';
@@ -55,6 +57,10 @@ export interface WebConfig {
   vip: VipConfig | undefined;
   /** Why a given `vip` section was not taken: Support / VIP stays off, the site runs. */
   vipProblem: string | undefined;
+  /** The home page's Discord button (discord.ts); `undefined` when the section is missing or bad (then `discordProblem` says why). */
+  discord: DiscordConfig | undefined;
+  /** Why a given `discord` section was not taken: the button stays off, the site runs. */
+  discordProblem: string | undefined;
 }
 
 /** The `admin` section, or the reason it cannot be used. A missing section is no problem: the panel is simply off. */
@@ -74,6 +80,16 @@ function vipSection(value: unknown): { vip: VipConfig | undefined; vipProblem: s
     return { vip: parseVipConfig(value), vipProblem: undefined };
   } catch (error) {
     return { vip: undefined, vipProblem: (error as Error).message };
+  }
+}
+
+/** The `discord` section, or the reason it cannot be used; a missing one keeps the button off. */
+function discordSection(value: unknown): { discord: DiscordConfig | undefined; discordProblem: string | undefined } {
+  if (value === undefined) return { discord: undefined, discordProblem: undefined };
+  try {
+    return { discord: parseDiscordConfig(value), discordProblem: undefined };
+  } catch (error) {
+    return { discord: undefined, discordProblem: (error as Error).message };
   }
 }
 
@@ -142,5 +158,6 @@ export function parseWebConfig(json: unknown): WebConfig {
     reservedNames: reservedNames(root.reservedNames),
     ...adminSection(root.admin),
     ...vipSection(root.vip),
+    ...discordSection(root.discord),
   };
 }

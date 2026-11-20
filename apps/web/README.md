@@ -125,6 +125,18 @@ never stops the site: a bad `admin` section or login file writes `admin: panel o
 - **Try it without a database:** `npm run admin:demo` (made-up data on `http://127.0.0.1:8099`, log in as `Poreotix` /
   `demo-password-1` with the code it prints). `npm run test:e2e:admin` runs the page's browser check against it.
 
+## Discord button
+
+The home page shows "Join our Discord" with the server's live "42 online · 310 members" under Sign up.
+
+- **Settings:** `"discord": { "invite": "https://discord.gg/abc123" }` in `web.config.json`: an invite link set to never
+  expire (`discord.com/invite/<code>` or the bare code also work). Never in the repo. Without it there is no button; a bad
+  one only writes `discord: off: <reason>`.
+- **Numbers:** the service asks Discord's public invite endpoint (`/api/v10/invites/<code>?with_counts=true`, no token)
+  at most every 10 minutes (every minute while Discord gives no numbers) and serves `GET /api/discord`. The visitor's
+  browser never calls Discord. When Discord says the invite is unknown or expired the button hides and the log says
+  `discord: invite is invalid or expired` once: make a new never-expiring invite and restart the service.
+
 ## Support / VIP (manual QR payments)
 
 Players pick VIP 1-4 on `/vip/`, pay outside the site by one of the admin's payment QRs, then send the receipt picture
