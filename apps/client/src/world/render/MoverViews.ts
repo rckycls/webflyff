@@ -42,7 +42,7 @@ import {
 } from './sparks';
 import type { SparkInfo, SparkUniforms } from './sparks';
 import { playWing } from './wingCapes';
-import type { WingMotion } from './wingCapes';
+import type { WingMotion, WingPlaying } from './wingCapes';
 
 /** `m_fBlendWeight += 0.05f` a frame move (`CModelObject::FrameMove`, `ModelObject.cpp:1749-1754`): 20 steps of blending. */
 const BLEND_SECONDS = 20 / STEPS_PER_SECOND;
@@ -934,8 +934,8 @@ export class MoverViews {
     return view.held.flatMap((held) => (held.hand && held.item.parent !== null ? [{ hand: held.hand, object: held.item }] : []));
   }
 
-  /** 2026-11-17 (wing capes, for the tests): the wing capes on the movers' backs, whether drawn, and their motion. */
-  wingCapes(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: WingMotion | null }> {
+  /** 2026-11-17 (wing capes, for the tests): the wing capes on the movers' backs, whether drawn, and their motion (a flap too). */
+  wingCapes(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: WingPlaying | null }> {
     return [...this.views.values()].flatMap((view) => view.held.flatMap((held) =>
       held.slot === 'back' && held.item.parent !== null
         ? [{ objectId: view.mover.objectId, itemId: view.look?.held.back ?? -1, drawn: held.item.visible, playing: held.wing?.playing ?? null }]

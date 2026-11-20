@@ -76,6 +76,12 @@ wing's stand motion near still (15% of its movement, twice as slow, from the sam
 going on plays it; a swing or a cast plays the stand flap; walking or running the walk. The bag preview, character select
 and the beauty shop show the idle's first pose (the stand's). No convert or gear sync: client code only.
 
+Later the same day (branch `wing-capes-flap`, the owner: "add a little more movement on idle. add a random big flap every
+minute or few seconds"): the idle keeps 30% of the stand's movement at 1.5 times slower (was 15% at twice as slow), and
+after a random 5 to 60 seconds of idle the wings do one big flap: the walk's flap, in whole flaps of at least 0.6 s (one
+1 s flap of the feathered and peacock wings, a short burst of the quick flutters), then the idle again. A flap the wearer
+starts walking in goes on as the walk. Character select keeps the plain idle. No convert or gear sync.
+
 The same for men and women. The tuning page was temporary and is not in the repo (the session notes folder has a copy).
 
 ## Checks

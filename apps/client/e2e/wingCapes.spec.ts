@@ -87,9 +87,11 @@ test('wing capes: drawn on the backs of Webby and of eleven players of both bodi
   await enterFlaris(page);
   await expect.poll(async () => (await capesOf(page)).length, ON_FRAMES).toBe(13);
   const capes = await capesOf(page);
-  expect(capes.find((c) => c.objectId === SELF_ID)).toMatchObject({ itemId: ANGELIC, drawn: true, playing: 'idle' });
+  // idle, or one of its big flaps (2026-11-20: a random 5 to 60 s apart)
+  const idle = expect.stringMatching(/^(idle|flap)$/);
+  expect(capes.find((c) => c.objectId === SELF_ID)).toMatchObject({ itemId: ANGELIC, drawn: true, playing: idle });
   for (const [i, mover] of ROW.entries()) {
-    expect(capes.find((c) => c.objectId === mover.objectId)).toMatchObject({ itemId: WING_CAPES[i], drawn: true, playing: 'idle' });
+    expect(capes.find((c) => c.objectId === mover.objectId)).toMatchObject({ itemId: WING_CAPES[i], drawn: true, playing: idle });
   }
   expect(capes.find((c) => c.objectId === FLIER_ID)).toMatchObject({ drawn: false });
   await page.waitForTimeout(1500); // the wings breathe a little in their idle
@@ -102,13 +104,13 @@ test('wing capes: running plays the wings\' walk, standing again their near-stil
   await playGateway(page, script(), LISTED);
   await enterFlaris(page);
   const own = async () => (await capesOf(page)).find((c) => c.objectId === SELF_ID);
-  await expect.poll(own, ON_FRAMES).toMatchObject({ playing: 'idle' });
+  await expect.poll(own, ON_FRAMES).toMatchObject({ playing: expect.stringMatching(/^(idle|flap)$/) });
   await page.keyboard.down('w');
   await expect.poll(async () => (await own())?.playing, ON_FRAMES).toBe('walk');
   await page.waitForTimeout(600);
   await page.screenshot({ path: info.outputPath('running.png') });
   await page.keyboard.up('w');
-  await expect.poll(async () => (await own())?.playing, ON_FRAMES).toBe('idle');
+  await expect.poll(async () => (await own())?.playing, ON_FRAMES).toMatch(/^(idle|flap)$/);
   expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 });
 

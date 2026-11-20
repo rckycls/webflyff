@@ -23,7 +23,7 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { GameData } from '../gameData';
 import { heldModels } from './looks';
 import type { MoverLook } from './looks';
-import { applyWingFit, idleOf, playWing, wingFit } from './wingCapes';
+import { applyWingFit, flapGap, idleOf, playWing, wingFit } from './wingCapes';
 import type { WingMotions } from './wingCapes';
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -211,7 +211,9 @@ async function wingCape(
   if (skeleton !== undefined) skeleton.name = 'wing skeleton';
   const { stand, walk } = await wingClips(services, model);
   const idle = stand === null ? null : idleOf(stand); // 2026-11-20: near still while the wearer stands idle
-  const wing: WingMotions = { mixer: new AnimationMixer(scene), stand, walk, idle, playing: null };
+  const wing: WingMotions = {
+    mixer: new AnimationMixer(scene), stand, walk, idle, playing: null, untilFlap: flapGap(), flapLeft: 0,
+  };
   playWing(wing, 'idle', 0);
   applyWingFit(scene, wingFit(model, look.skeleton === skeletonKey('female') ? 'female' : 'male'));
   const item = new Group();
