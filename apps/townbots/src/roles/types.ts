@@ -26,6 +26,8 @@ export interface RoleIo {
   hpRatio(): number;
   /** A straight walk to `pos`, as a tap on the ground there. */
   walkTo(pos: Vec3): void;
+  /** The places to walk through in town to reach `target` (`TownGraph.path`), ending with `target`. */
+  pathTo(target: Vec3): Vec3[];
   sitting(): boolean;
   sit(): void;
   stand(): void;

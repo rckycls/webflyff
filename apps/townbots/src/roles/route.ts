@@ -98,14 +98,15 @@ export class RouteWalker {
 }
 
 /**
- * A walk to one place in town: the route walker (asked again every few seconds, `failed` after 20 s stuck), and
- * `arrived` as soon as the bot is within reach, even in the tick that asked for the walk.
+ * A walk to one place in town, through the places on the way (`RoleIo.pathTo`): the route walker (asked again every
+ * few seconds, `failed` after 20 s stuck), and `arrived` as soon as the bot is within reach of the place, even in the
+ * tick that asked for the walk.
  */
 export class TownWalk {
   private readonly walker: RouteWalker;
 
   constructor(private readonly target: Vec3, private readonly io: RoleIo) {
-    this.walker = new RouteWalker([target], io);
+    this.walker = new RouteWalker(io.pathTo(target), io);
   }
 
   tick(): WalkStatus {

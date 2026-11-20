@@ -93,3 +93,13 @@ describe('the stock file', () => {
     expect(parseSettings(v).stockFile).toBe('C:/game/stock.json');
   });
 });
+
+describe('town links', () => {
+  it('must name places the town has', () => {
+    const v = valid();
+    v.places.townLinks = [['town[0]', 'town[1]']];
+    expect(parseSettings(v).places.townLinks).toEqual([['town[0]', 'town[1]']]);
+    v.places.townLinks = [['town[0]', 'town[9]']];
+    expect(() => parseSettings(v)).toThrow(/places\.townLinks\[0\]/);
+  });
+});

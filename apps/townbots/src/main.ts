@@ -25,6 +25,7 @@ import { loadSettings } from './settings';
 import { writeStock } from './stock';
 import type { TownBotsSettings } from './settings';
 import { runSetup } from './setupRun';
+import { TownGraph } from './townGraph';
 
 /** The bots' gateway takes only this origin, and listens on 127.0.0.1 alone. */
 const ORIGIN = 'http://townbots.localhost';
@@ -110,6 +111,7 @@ async function main(): Promise<void> {
     settings, botNames, random: Math.random, log,
     planner: new RolePlanner(settings.roleTargets, Math.random, () => Date.now()),
     spots: new SpotBook(settings.places.spots),
+    town: new TownGraph(settings.places),
     shopSpots: new Map(),
     fighting: { allowed: true },
   };

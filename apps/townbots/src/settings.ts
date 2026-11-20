@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { validateCharacterName } from '@flyffweb/protocol';
 import type { Vec3 } from '@flyffweb/protocol';
+import { townNodes } from './townGraph';
 
 export type Group = 'rookie' | 'first' | 'veteran';
 export type Role = 'farming' | 'wandering' | 'upgrading' | 'shop' | 'afk';
@@ -41,6 +42,8 @@ export interface Places {
   spots: Spot[];
   /** Way points from the town square out to a spot, by name. */
   routes: Record<string, Vec3[]>;
+  /** The town walks known to be clear, by place name (`townGraph.ts`): a bot crosses town along them. */
+  townLinks?: Array<[string, string]>;
 }
 
 export interface ItemPlan {
@@ -161,11 +164,20 @@ function places(value: unknown, path: string): Places {
       kinds: ints(s.kinds, `${at}.kinds`), minLevel, maxLevel: int(s.maxLevel, `${at}.maxLevel`, minLevel, 150), route,
     };
   });
-  return {
+  const parsed: Places = {
     town, lodestar: vec(p.lodestar, `${path}.lodestar`),
     upgradeNpc: { pos: vec(npc.pos, `${path}.upgradeNpc.pos`), npcId: str(npc.npcId, `${path}.upgradeNpc.npcId`) },
     shopSpots: vecs(p.shopSpots, `${path}.shopSpots`), spots, routes,
   };
+  if (p.townLinks !== undefined) {
+    const names = townNodes(parsed);
+    parsed.townLinks = arr(p.townLinks, `${path}.townLinks`).map((value, i) => {
+      const pair = arr(value, `${path}.townLinks[${i}]`);
+      if (pair.length !== 2 || !names.has(String(pair[0])) || !names.has(String(pair[1]))) fail(`${path}.townLinks[${i}]`, "must be two names of town places (town[i], lodestar, upgradeNpc, shopSpots[i], routes.<name>[0])");
+      return [String(pair[0]), String(pair[1])];
+    });
+  }
+  return parsed;
 }
 
 function items(value: unknown, path: string): ItemPlan {

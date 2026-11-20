@@ -53,7 +53,8 @@ export class FarmRole implements RoleRunner {
     private readonly makeFarm: () => FarmControl,
     private readonly duration: () => number,
   ) {
-    this.walker = new RouteWalker([...route, spot.center], io);
+    // through town to the route's start, then the route out, then the spot
+    this.walker = new RouteWalker([...io.pathTo(route[0]!), ...route.slice(1), spot.center], io);
   }
 
   tick(): RoleStatus {

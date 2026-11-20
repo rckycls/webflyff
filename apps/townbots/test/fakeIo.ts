@@ -32,6 +32,7 @@ export function fakeIo(random: () => number = () => 0.5): FakeIo {
       io.dest = pos;
       if (!io.stuck) io.pos = [...pos] as Vec3;
     },
+    pathTo: (target) => [target],
     sitting: () => io.isSitting,
     sit: () => { io.calls.push('sit'); io.isSitting = true; },
     stand: () => { io.calls.push('stand'); io.isSitting = false; },

@@ -40,3 +40,16 @@ describe('RouteWalker', () => {
     expect(status).toBe('arrived');
   });
 });
+
+describe('TownWalk', () => {
+  it('walks the town path the bot is given, then arrives', async () => {
+    const { TownWalk } = await import('../src/roles/route');
+    const io = fakeIo();
+    io.pathTo = (target) => [[30, 0, 0], target];
+    const walk = new TownWalk([30, 0, 40], io);
+    let status = walk.tick();
+    for (let i = 0; i < 5 && status === 'walking'; i++) status = walk.tick();
+    expect(io.calls).toEqual(['walk 30,0,0', 'walk 30,0,40']);
+    expect(status).toBe('arrived');
+  });
+});

@@ -19,6 +19,7 @@ import type { FarmControl, RoleIo, RoleRunner } from './roles/types';
 import { groundDistance } from './roles/types';
 import { SafetyNet } from './safety';
 import { gearToEquip } from './setup';
+import type { TownGraph } from './townGraph';
 import { supplyCounts } from './stock';
 import type { Role, TownBotsSettings } from './settings';
 
@@ -38,6 +39,8 @@ export interface BotWorld {
   shopSpots: Map<string, Vec3>;
   /** The bots' names, lower-cased: bots never talk to bots, and never count as players. */
   botNames: ReadonlySet<string>;
+  /** The town's clear walks, for crossing town place to place. */
+  town: TownGraph;
   /** False once any bot's safety net tripped: nobody farms. */
   fighting: { allowed: boolean };
   random: () => number;
@@ -250,6 +253,7 @@ export class BotController {
       dead: () => { const s = self(); return s !== undefined && isDie(s); },
       hpRatio: () => { const own = body.own(); return own === undefined || own.maxHp() <= 0 ? 1 : own.hp / own.maxHp(); },
       walkTo: (pos) => body.walkTo(pos),
+      pathTo: (target) => { const at = self()?.act.body.pos as Vec3 | undefined; return at === undefined ? [target] : this.w.town.path(at, target); },
       sitting: () => ((self()?.act.stateFlag ?? 0) & ObjStaF.SIT) !== 0,
       sit: () => { const s = self(); if (s !== undefined && canToggleSit(s.act) && (s.act.stateFlag & ObjStaF.SIT) === 0) body.session?.sendMotion(ActMsg.SITDOWN); },
       stand: () => { const s = self(); if (s !== undefined && canToggleSit(s.act) && (s.act.stateFlag & ObjStaF.SIT) !== 0) body.session?.sendMotion(ActMsg.STANDUP); },
