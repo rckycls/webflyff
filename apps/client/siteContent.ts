@@ -1,7 +1,8 @@
 // The home page's news, about text and screenshots (website spec §3.2), read from `apps/client/content/` when the page
 // is built and given to it as the module `virtual:site-content`:
 //
-// - news: `content/news/YYYY-MM-DD-slug.md`, the first line `# Title`; the 5 newest, newest first;
+// - news: `content/news/YYYY-MM-DD-slug.md`, the first line `# Title`; the 30 newest, newest first (the page scrolls
+//   them in a box, 2026-11-21);
 // - about: `content/about.md`;
 // - screenshots: `content/screenshots/*.webp|png|jpg`, up to 6, sorted by name. The dev server serves them at
 //   `/site/screenshots/<name>`; the build copies them to `client/site/<name>`.
@@ -16,7 +17,7 @@ import { renderMarkdown } from './src/site/newsMarkdown';
 export interface NewsPost { date: string; title: string; html: string }
 export interface SiteContent { news: NewsPost[]; aboutHtml: string; screenshots: string[] }
 
-export const NEWS_COUNT = 5;
+export const NEWS_COUNT = 30;
 export const SCREENSHOT_COUNT = 6;
 const NEWS_FILE = /^(\d{4}-\d{2}-\d{2})-.+\.md$/;
 const SCREENSHOT_FILE = /\.(webp|png|jpe?g)$/i;

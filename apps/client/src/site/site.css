@@ -85,8 +85,19 @@ html.has-art .home-hero .site-logo { height: min(24vh, 26vw, 200px); }
 .site-text p + p { margin-top: 8px; }
 .site-text ul { margin: 8px 0; padding-left: 22px; }
 .site-text strong { color: var(--ink); }
-.site-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 16px 0; padding: 0; list-style: none; }
-.site-shots img { display: block; width: 100%; height: auto; border-radius: 8px; }
+/* 2026-11-21 (owner): the news scroll in their own box, a thin gold bar at the side */
+.site-news-list {
+  max-height: min(560px, 70vh); overflow-y: auto; overscroll-behavior: contain; padding-right: 10px;
+  scrollbar-width: thin; scrollbar-color: rgba(232, 196, 120, 0.55) transparent;
+}
+.site-news-list::-webkit-scrollbar { width: 6px; }
+.site-news-list::-webkit-scrollbar-thumb { border-radius: 3px; background: rgba(232, 196, 120, 0.55); }
+.site-news-list:focus-visible { outline: 2px solid var(--gold-1); outline-offset: 4px; border-radius: 4px; }
+.site-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 16px 0; padding: 0; list-style: none; }
+.site-shots a { display: block; color: var(--muted); font-size: 14px; text-decoration: none; }
+.site-shots a:hover img, .site-shots a:focus-visible img { outline: 2px solid var(--gold-1); outline-offset: 1px; }
+.site-shots img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; }
+.site-shot-label { display: block; margin-top: 4px; }
 .site-shots-empty {
   margin: 16px 0; padding: 28px 12px; border: 1px dashed rgba(255, 255, 255, 0.25); border-radius: 8px;
   color: var(--quiet); text-align: center;

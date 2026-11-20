@@ -5,6 +5,7 @@
 import { content } from 'virtual:site-content';
 import { showDiscord } from './discordBox';
 import { el, showLobbyArt, siteLogo, siteRoot } from './page';
+import { shotLabel } from './shotLabel';
 import { watchStatus } from './statusBox';
 import './site.css';
 
@@ -22,17 +23,23 @@ function markdown(html: string): HTMLElement {
   return box;
 }
 
+// 2026-11-21 (owner): every post of the last days, in a box that scrolls on its own (focusable, so keys scroll it too)
 const news = content.news.length === 0
   ? [el('p', { class: 'site-quiet' }, 'No news yet.')]
-  : content.news.map((post) => el('article', { class: 'site-post' },
-    el('time', { datetime: post.date }, post.date),
-    el('h3', {}, post.title),
-    markdown(post.html)));
+  : [el('div', { class: 'site-news-list', tabindex: '0', role: 'region', 'aria-label': 'News posts' },
+    ...content.news.map((post) => el('article', { class: 'site-post' },
+      el('time', { datetime: post.date }, post.date),
+      el('h3', {}, post.title),
+      markdown(post.html))))];
 
+// each picture opens full size; its caption comes from the file name
 const shots = content.screenshots.length === 0
   ? el('p', { class: 'site-shots-empty' }, 'Screenshots coming soon')
   : el('ul', { class: 'site-shots' },
-    ...content.screenshots.map((url, i) => el('li', {}, el('img', { src: url, alt: `Screenshot ${i + 1}`, loading: 'lazy' }))));
+    ...content.screenshots.map((url, i) => el('li', {},
+      el('a', { href: url, target: '_blank', rel: 'noopener' },
+        el('img', { src: url, alt: shotLabel(url, i), loading: 'lazy' }),
+        el('span', { class: 'site-shot-label' }, shotLabel(url, i))))));
 
 root.replaceChildren(
   el('header', { class: 'home-hero' },

@@ -16,13 +16,16 @@ function contentDir(files: Record<string, string>): string {
 }
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
-it('reads the five newest posts, newest first, and skips misnamed files', () => {
+it('reads the thirty newest posts, newest first, and skips misnamed files', () => {
   const warn = vi.fn();
   const files: Record<string, string> = { 'about.md': 'About **us**', 'news/draft.md': '# Draft\n\nnot shown' };
-  for (let day = 1; day <= 7; day++) files[`news/2026-11-0${day}-post-${day}.md`] = `# Post ${day}\n\nDay ${day}.`;
+  const day = (n: number): string => `2026-10-${String(n).padStart(2, '0')}`;
+  for (let n = 1; n <= 31; n++) files[`news/${day(n)}-post-${n}.md`] = `# Post ${n}\n\nDay ${n}.`;
   const content = readSiteContent(contentDir(files), warn);
-  expect(content.news.map((post) => post.date)).toEqual(['2026-11-07', '2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03']);
-  expect(content.news[0]).toEqual({ date: '2026-11-07', title: 'Post 7', html: '<p>Day 7.</p>' });
+  expect(content.news).toHaveLength(30);
+  expect(content.news.map((post) => post.date).slice(0, 3)).toEqual([day(31), day(30), day(29)]);
+  expect(content.news.at(-1)!.date).toBe(day(2));
+  expect(content.news[0]).toEqual({ date: day(31), title: 'Post 31', html: '<p>Day 31.</p>' });
   expect(content.aboutHtml).toBe('<p>About <strong>us</strong></p>');
   expect(warn).toHaveBeenCalledWith(expect.stringContaining('draft.md'));
 });

@@ -20,10 +20,20 @@ test('shows the online count, the news and the links', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Play', exact: true })).toHaveAttribute('href', '/play/');
   await expect(page.getByRole('link', { name: 'Sign up', exact: true })).toHaveAttribute('href', '/sign-up/');
   await expect(page.getByText('Closed Beta', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Closed beta' })).toBeVisible();
-  await expect(page.locator('article time').first()).toHaveText('2026-11-11');
+  // 2026-11-21: every post since the beta opened, newest first, in a box that scrolls on its own
+  const posts = page.getByRole('region', { name: 'News posts' });
+  await expect(posts.locator('article').first()).toBeVisible();
+  expect(await posts.locator('article').count()).toBeGreaterThan(5);
+  await expect(posts.locator('article time').first()).toHaveText('2026-11-21');
+  await expect(posts.getByRole('heading', { name: 'Closed beta', exact: true })).toBeAttached();
+  const box = await posts.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight, overflow: getComputedStyle(el).overflowY }));
+  expect(box.overflow).toBe('auto');
+  expect(box.scroll).toBeGreaterThan(box.client);
   await expect(page.getByRole('heading', { name: 'About' })).toBeVisible();
-  await expect(page.getByText('Screenshots coming soon')).toBeVisible();
+  // the screenshots: captions from their file names, each opening the full picture
+  await expect(page.getByText('Screenshots coming soon')).toHaveCount(0);
+  await expect(page.getByRole('img', { name: 'Boss fight' })).toBeAttached();
+  await expect(page.locator('.site-shots a')).toHaveCount(6);
   await expect(page.getByText('Windows and Mac browsers · Android phones and tablets · iPhone and iPad')).toBeVisible();
 });
 
@@ -113,10 +123,10 @@ test('shows no Discord button when it is off or the answer is bad', async ({ pag
   await discordAnswers(page, 404, { error: 'off' });
   await page.goto('/');
   await expect(page.getByRole('status')).toHaveText('Online · 3 players');
-  await expect(page.getByRole('link', { name: /Discord/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Join our Discord/ })).toHaveCount(0); // the button (the news may link the server)
   await page.unroute('**/api/discord');
   await discordAnswers(page, 200, { ...DISCORD, url: 'https://evil.example/x' });
   await page.reload();
   await expect(page.getByRole('status')).toHaveText('Online · 3 players');
-  await expect(page.getByRole('link', { name: /Discord/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Join our Discord/ })).toHaveCount(0); // the button (the news may link the server)
 });
