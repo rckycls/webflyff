@@ -88,6 +88,35 @@ export function targetHpText(hp: number, max: number | null): string {
  * left with the current one ("x1": the last bar), as the rebuilt Neuz draws it (`RenderSelectObj`, `x%d` at
  * `( x + 200 + 6, 30 - 2 )`); none for any other mover.
  */
+/** 2026-11-20 (owner): the last bar's white, a little more opaque than `EMPTY_COLOR`, and the grey behind it. */
+const LAST_SHADE_ALPHA = 230;
+const BEHIND_LAST = 0xc8404040; // ARGB( 200, 64, 64, 64 )
+
+/** `left` kept in 1..`max` (a bad count from the server never makes a bad colour). */
+function barsIn(left: number, max: number): number {
+  return Number.isFinite(left) ? Math.min(max, Math.max(1, Math.trunc(left))) : max;
+}
+
+/**
+ * 2026-11-20 (owner): layered boss HP, the colour of the bar `left` of `max`: Neuz's fill (`FILL_COLOR`) on the first, a
+ * shade lighter on each next, white on the last; green and blue from 15 to 255 and alpha from 128 to 230, evenly. One bar
+ * (a normal monster) keeps the fill.
+ */
+export function barShade(left: number, max: number): number {
+  if (!(max > 1)) return FILL_COLOR;
+  const t = (max - barsIn(left, max)) / (max - 1);
+  const light = Math.round(15 + 240 * t);
+  const alpha = Math.round(128 + (LAST_SHADE_ALPHA - 128) * t);
+  return ((alpha << 24) | (0xff << 16) | (light << 8) | light) >>> 0;
+}
+
+/** What shows behind the bar `left` of `max`: the next bar's shade, dark grey behind the last; nothing for one bar. */
+export function behindShade(left: number, max: number): number | null {
+  if (!(max > 1)) return null;
+  const bars = barsIn(left, max);
+  return bars > 1 ? barShade(bars - 1, max) : BEHIND_LAST;
+}
+
 export function targetBarsText(target: Pick<Mover, 'hpBars'>): string {
   return target.hpBars === undefined ? '' : `x${target.hpBars.left}`;
 }
@@ -103,6 +132,7 @@ export class TargetBar {
   private readonly name: HTMLElement;
   private readonly arrow: HTMLElement;
   private readonly fill: Gauge;
+  private readonly next: Gauge;
   private readonly info: HTMLElement;
   private readonly bars: HTMLElement;
 
@@ -119,6 +149,9 @@ export class TargetBar {
     const empty = new Gauge(art, 'GauEmptyNormal.bmp', EMPTY_COLOR, 'target-empty', doc);
     empty.set(GAUGE_WIDTH);
     empty.element.style.top = `${GAUGE_TOP}px`;
+    // 2026-11-20: layered boss HP, the next bar's shade at full width between the empty gauge and the fill
+    this.next = new Gauge(art, 'GauEmptyNormal.bmp', BEHIND_LAST, 'target-next', doc);
+    this.next.element.style.top = `${GAUGE_TOP}px`;
     this.fill = new Gauge(art, 'GauEmptyNormal.bmp', FILL_COLOR, 'target', doc);
     this.fill.element.style.top = `${GAUGE_TOP}px`;
 
@@ -143,7 +176,7 @@ export class TargetBar {
     this.bars.style.left = `${GAUGE_WIDTH + 6}px`;
     this.bars.style.top = `${GAUGE_TOP - 2}px`;
 
-    element.append(empty.element, this.fill.element, this.arrow, this.name, this.info, this.bars);
+    element.append(empty.element, this.next.element, this.fill.element, this.arrow, this.name, this.info, this.bars);
     this.element = element;
   }
 
@@ -160,6 +193,12 @@ export class TargetBar {
     if (!shown) return;
 
     const max = target.maxHp;
+    // layered boss HP: this bar's shade, the next one's behind it (none for one bar)
+    const layered = target.hpBars;
+    this.fill.setColor(layered === undefined ? FILL_COLOR : barShade(layered.left, layered.max));
+    const behind = layered === undefined ? null : behindShade(layered.left, layered.max);
+    if (behind !== null) this.next.setColor(behind);
+    this.next.set(behind === null ? 0 : GAUGE_WIDTH);
     this.fill.set(targetFillWidth(target.hp, max));
 
     const text = targetText(target, ownLevel, this.moverProps, gameMaster);
