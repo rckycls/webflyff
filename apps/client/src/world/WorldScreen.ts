@@ -2238,14 +2238,15 @@ export class WorldScreen {
     });
     // 2026-11-10 (owner): the phone's shortcuts show the Start menu's icons of the important windows (MOBILE_SHORTCUTS);
     // Stats, the diagnostics panel, is no Neuz window and keeps its text; 2026-11-12: only while the overlay is shown (a
-    // build made for the players hides it unless the address has ?stats, debugOverlay.ts)
+    // build made for the players hides it unless the address has ?stats, debugOverlay.ts). 2026-11-20 (owner): the desktop
+    // shows the same icons, each with the task bar's applet tooltip ("[Hotkey H]": TID_GAME_TOOLTIP_HOTKEY)
     const overlayShown = this.page!.overlay.shown;
     const mobileTools = new MobileTools(this.hudArt!, [
       ...MOBILE_SHORTCUTS.map(({ label, applet, window, rank }) => ({ label, applet, rank, run: () => this.openWindow(window) })),
       ...(overlayShown
         ? [{ label: 'Stats', applet: null, run: () => { statsButton!.ariaExpanded = String(this.page!.overlay.togglePanel()); } }]
         : []),
-    ], doc);
+    ], doc, this.data!.texts.get('TID_GAME_TOOLTIP_HOTKEY')?.text);
     this.mobileTools = mobileTools;
     // 2026-11-20 (owner, "allow opening a window while walking on mobile"): a second finger's tap on a button, a tab, a
     // window's close button... while the first walks clicks it (the phone's browser makes no click of it)
@@ -2613,8 +2614,13 @@ export class WorldScreen {
     }, this.hudArt!, doc);
     if (this.siteKeepAlive !== undefined) clearInterval(this.siteKeepAlive);
     this.siteKeepAlive = setInterval(() => { void codeApi.session(); }, SITE_KEEP_ALIVE_MS);
+    // 2026-11-20 (owner, "the autoplay icon on display should open the autoplay window when clicked"): it opens the window
+    // on the tab of the mode last started (Start and Stop are the window's), or closes it
     this.autoButton = new AutoButton(this.autoPlay!, () => {
-      if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
+      const window = this.autoPlayWindow;
+      if (window === undefined) return;
+      if (window.isOpen) window.frame.close();
+      else window.open(this.autoPlay!.settings.mode === 'support' ? 'support' : 'farm');
     }, doc);
     this.saverScreen = new SaverScreen(this.autoPlay!, {
       isPhone: () => isPhone(doc),

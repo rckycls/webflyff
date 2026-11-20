@@ -4,6 +4,8 @@
 // (hud/guildCombat/tabs.ts). Slots are filled as the phone's Action Slot window fills its own: a tap on the slot opens a
 // list to pick from, so desktop and phone work the same way. Numbers move with [-] and [+], so no keyboard is needed.
 // custom (owner 2026-11-16): the farm bot's looting skips what the Pet Filter leaves behind (hud/petFilterWindow.ts, U).
+// 2026-11-20 (owner, "stop and start should be inside the autoplay window"): Start / Stop is one bar under the tab strip,
+// on every tab (`refreshRun`); the AUTO button opens this window and starts nothing (autoButton.ts).
 
 import { themeUrl } from '../art';
 import type { UiArt } from '../art';
@@ -102,6 +104,13 @@ export class AutoPlayWindow {
   private choosingKinds = false;
   /** What was drawn, as a string, to draw only what changed. */
   private shown = '';
+  /**
+   * 2026-11-20 (owner, "stop and start should be inside the autoplay window"): the bar under the tabs, on every tab: Start
+   * (Stop while Auto Play runs), Battery saver while the farm bot runs, and what Auto Play is doing.
+   */
+  private readonly run: HTMLElement;
+  /** What the bar shows, as a string, to draw only what changed. */
+  private runShown = '';
 
   constructor(private readonly art: UiArt, private readonly play: AutoPlayWindowPlay, private readonly deps: AutoPlayWindowDeps,
     private readonly doc: Document = document) {
@@ -114,8 +123,12 @@ export class AutoPlayWindow {
     const holder = doc.createElement('div');
     holder.className = 'auto-play-tabs';
     holder.append(this.tabs.element);
-    this.frame.body.append(holder);
-    this.frame.onClose = () => { this.picking = null; this.pickingSkill = null; this.choosingKinds = false; this.shown = ''; };
+    this.run = doc.createElement('div');
+    this.run.className = 'auto-play-run';
+    this.frame.body.append(holder, this.run);
+    this.frame.onClose = () => {
+      this.picking = null; this.pickingSkill = null; this.choosingKinds = false; this.shown = ''; this.runShown = '';
+    };
   }
 
   get isOpen(): boolean {
@@ -146,6 +159,7 @@ export class AutoPlayWindow {
   refresh(): void {
     if (!this.frame.isOpen) return;
     const tab = TABS[this.tabs.selected];
+    this.refreshRun(tab === 'support');
     if (tab === 'farm') { this.refreshFarm(); return; }
     if (tab === 'skills') { this.refreshSkills(); return; }
     if (tab === 'support') { this.refreshSupport(); return; }
@@ -161,6 +175,41 @@ export class AutoPlayWindow {
   dispose(): void {
     this.frame.close();
     this.frame.element.remove();
+  }
+
+  /**
+   * 2026-11-20: the Start / Stop bar. Start runs the farm bot, or on the Support tab Support mode; while either runs the
+   * button is Stop (it stops what runs, "you took control"). Start is greyed where it may not start: the week's hours used
+   * up (the line says "Weekly limit reached."), farming not allowed here, Support with no partner.
+   */
+  private refreshRun(supportTab: boolean): void {
+    const play = this.play, running = play.farm === 'running', mode = play.mode ?? 'farm';
+    const allowed = supportTab || this.deps.farmAllowed();
+    const outOfHours = this.outOfHours(), partner = play.settings.support.partnerPlayerId !== 0;
+    const saver = running && mode === 'farm' && this.deps.showSaver !== undefined;
+    const key = JSON.stringify([supportTab, play.farm, mode, play.phase, play.lastStop, play.bagIsFull, allowed, outOfHours, partner, saver]);
+    if (key === this.runShown) return;
+    this.runShown = key;
+    const go = this.word(running ? 'Stop' : 'Start', () => {
+      if (play.farm === 'running') play.stop('you took control');
+      else if (supportTab) play.startSupport?.();
+      else play.start();
+      this.shown = '';
+      this.runShown = '';
+      this.refresh();
+    }, 'go');
+    go.classList.add('auto-run-go');
+    go.disabled = !running && (outOfHours || (supportTab ? !partner : !allowed));
+    const buttons: HTMLElement[] = [go];
+    if (saver) buttons.push(this.word('Battery saver', () => this.deps.showSaver?.(), 'saver'));
+    const state = this.doc.createElement('div');
+    state.className = 'auto-farm-state';
+    state.textContent = running ? `Running: ${play.phase}${mode === 'farm' && play.bagIsFull ? ' (bag full)' : ''}`
+      : outOfHours ? 'Weekly limit reached.'
+        : play.farm === 'stopped' ? `Stopped: ${play.lastStop ?? ''}`
+          : supportTab ? (partner ? 'Off' : 'No partner.') : allowed ? 'Off' : 'Not allowed here.';
+    this.run.dataset.state = play.farm;
+    this.run.replaceChildren(...buttons, state);
   }
 
   private refreshSkills(): void {
@@ -293,8 +342,7 @@ export class AutoPlayWindow {
     const named = [...support.heals, ...support.buffs].map((i) => this.deps.skill(i));
     const choices = this.pickingSkill !== null && (this.pickingSkill.list === 'heals' || this.pickingSkill.list === 'partnerBuffs')
       ? this.deps.skillChoices() : null;
-    const key = JSON.stringify(['support', support, play.farm, play.mode, play.phase, play.lastStop, this.pickingSkill, named, choices,
-      this.partnerNote, this.deps.usage?.() ?? null]);
+    const key = JSON.stringify(['support', support, this.pickingSkill, named, choices, this.partnerNote, this.deps.usage?.() ?? null]);
     if (key === this.shown) return;
     this.shown = key;
     this.tabs.pages[TABS.indexOf('support')]!.replaceChildren(this.supportPage());
@@ -302,10 +350,11 @@ export class AutoPlayWindow {
 
   /**
    * 2026-11-17 (owner, "another tab solely for buffers"): Support mode: the partner (the player targeted), the heals and
-   * the percents they are used under, the buffs kept on the partner, raising them, and Start / Stop.
+   * the percents they are used under, the buffs kept on the partner, raising them (Start / Stop: the bar under the tabs,
+   * 2026-11-20).
    */
   private supportPage(): HTMLElement {
-    const doc = this.doc, play = this.play, support = play.settings.support;
+    const doc = this.doc, support = this.play.settings.support;
     const page = doc.createElement('div');
     page.className = 'auto-support';
 
@@ -345,19 +394,6 @@ export class AutoPlayWindow {
       return line;
     };
 
-    const running = play.farm === 'running' && play.mode === 'support';
-    const go = this.word(running ? 'Stop' : 'Start', () => {
-      if (running) play.stop('you took control');
-      else play.startSupport?.();
-      this.shown = '';
-      this.refresh();
-    }, 'support-go');
-    go.classList.add('auto-farm-go');
-    go.disabled = !running && (support.partnerPlayerId === 0 || this.outOfHours());
-    const state = doc.createElement('div');
-    state.className = 'auto-farm-state';
-    state.textContent = running ? `Running: ${play.phase}` : play.mode === 'support' && play.farm === 'stopped' ? `Stopped: ${play.lastStop ?? ''}` : 'Off';
-
     const parts: HTMLElement[] = [
       partner,
       this.slotRow('heals', 'Heals', MAX_HEALS, 'heal'),
@@ -369,23 +405,23 @@ export class AutoPlayWindow {
     if (this.pickingSkill !== null && (this.pickingSkill.list === 'heals' || this.pickingSkill.list === 'partnerBuffs')) {
       parts.push(this.skillPickList(this.pickingSkill));
     }
-    page.append(...parts, go, state, ...this.weekLine());
+    page.append(...parts, ...this.weekLine());
     return page;
   }
 
   private refreshFarm(): void {
-    const play = this.play, allowed = this.deps.farmAllowed();
+    const play = this.play;
     const lines = play.farm === 'off' ? [] : play.stats.lines(this.deps.now());
     const near = this.choosingKinds ? this.deps.monstersNear?.() ?? [] : [];
-    const key = JSON.stringify(['farm', play.settings.farm, play.farm, play.phase, play.lastStop, play.bagIsFull, allowed, lines,
-      this.choosingKinds, near, this.deps.usage?.() ?? null]);
+    const key = JSON.stringify(['farm', play.settings.farm, lines, this.choosingKinds, near, this.deps.usage?.() ?? null]);
     if (key === this.shown) return;
     this.shown = key;
-    this.tabs.pages[TABS.indexOf('farm')]!.replaceChildren(this.farmPage(allowed, lines));
+    this.tabs.pages[TABS.indexOf('farm')]!.replaceChildren(this.farmPage(lines));
   }
 
-  private farmPage(allowed: boolean, lines: string[]): HTMLElement {
-    const doc = this.doc, play = this.play, farm = play.settings.farm;
+  /** The Farm tab: the hunting area and what to hunt, the counts of the run (Start / Stop: the bar under the tabs, 2026-11-20). */
+  private farmPage(lines: string[]): HTMLElement {
+    const doc = this.doc, farm = this.play.settings.farm;
     const page = doc.createElement('div');
     page.className = 'auto-farm';
 
@@ -415,32 +451,10 @@ export class AutoPlayWindow {
       afterText,
       this.stepButton('+', 'Stop later', () => { farm.stopAfterMin = Math.min(STOP_AFTER.max, farm.stopAfterMin + STOP_AFTER.step); }));
 
-    const running = play.farm === 'running';
-    const go = this.word(running ? 'Stop' : 'Start', () => {
-      if (play.farm === 'running') play.stop('you took control');
-      else play.start();
-      this.shown = '';
-      this.refresh();
-    }, 'go', 'autoPlay');
-    go.classList.add('auto-farm-go');
-    go.disabled = !running && (!allowed || this.outOfHours());
-
-    const state = doc.createElement('div');
-    state.className = 'auto-farm-state';
-    state.textContent = running ? `Running: ${play.phase}${play.bagIsFull ? ' (bag full)' : ''}`
-      : play.farm === 'stopped' ? `Stopped: ${play.lastStop ?? ''}` : allowed ? 'Off' : 'Not allowed here.';
     const stats = doc.createElement('div');
     stats.className = 'auto-farm-stats';
     stats.textContent = lines.join('  ');
 
-    const buttons = doc.createElement('div');
-    buttons.className = 'auto-farm-buttons';
-    buttons.append(go);
-    if (running && this.deps.showSaver !== undefined) {
-      const saver = this.word('Battery saver', () => this.deps.showSaver?.(), 'saver', 'autoPlay');
-      saver.classList.add('auto-farm-go');
-      buttons.append(saver);
-    }
     // 2026-11-17 (owner): "avoid giants, select specific monster on the said radius and only attack that mob"
     const giants = this.check('auto-avoid-giants', 'Avoid giants and bosses', farm.avoidGiants, (on) => { farm.avoidGiants = on; });
     // 2026-11-18 (owner): the hunting area's centre: the last kill (the area moves; never walks back) or the start point
@@ -460,7 +474,7 @@ export class AutoPlayWindow {
     kinds.append(this.caption('Monsters'), chosen, choose);
     const parts: HTMLElement[] = [radius, center, loot, giants, kinds];
     if (this.choosingKinds) parts.push(this.kindList());
-    page.append(...parts, after, buttons, state, stats, ...this.weekLine());
+    page.append(...parts, after, ...(lines.length > 0 ? [stats] : []), ...this.weekLine());
     return page;
   }
 

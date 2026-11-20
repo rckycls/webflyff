@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppId } from '../src/world/hud/applets';
 import type { UiArt } from '../src/world/hud/art';
-import { MOBILE_SHORTCUTS, MobileTools, iconCssSize } from '../src/world/hud/mobileTools';
+import { MOBILE_SHORTCUTS, MobileTools, iconCssSize, shortcutTip, startMenuName } from '../src/world/hud/mobileTools';
 
 const art = (have: (key: string) => boolean = () => true): UiArt => ({
   url: (key) => (have(key) ? `/assets/${key}` : ''),
@@ -78,13 +78,13 @@ describe('MobileTools', () => {
     tools.dispose();
   });
 
-  it("shows each applet's Start-menu icon and no text, its name as label and tooltip", () => {
+  it("shows each applet's Start-menu icon and no text, its name as label (no browser tooltip: the task bar's, below)", () => {
     const { tools, button } = rig();
     for (const [label, key] of [
       ['Skill', 'ui/bare/icon_skill.png'], ['Bag', 'ui/bare/icon_inventory.png'], ['Character', 'ui/bare/icon_character.png'],
     ] as const) {
       const b = button(label);
-      expect(b.title).toBe(label);
+      expect(b.title).toBe('');
       expect(b.textContent).toBe('');
       expect(b.dataset.icon).toBe('');
       const icon = b.querySelector<HTMLElement>('.hud-mobile-tool-icon')!;
@@ -141,6 +141,52 @@ describe('MobileTools', () => {
     tools.dispose();
     expect(root.getPropertyValue('--hud-mobile-icon')).toBe('');
     Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
+  });
+});
+
+// 2026-11-20 (owner, "add the 10 icons like mobile in desktop as well"): under the mouse, the task bar's applet tooltip
+// (PutTooTip, WndTaskBar.cpp:548-569): the Start menu's name, and "[Hotkey H]" in blue for one with a hotkey
+describe('the shortcuts\' tooltips (desktop)', () => {
+  const hover = (button: HTMLElement, pointerType: string, type = 'pointerenter') => {
+    const event = new Event(type);
+    Object.defineProperty(event, 'pointerType', { value: pointerType });
+    button.dispatchEvent(event);
+  };
+  const tip = () => document.querySelector<HTMLElement>('.hud-shortcut-tooltip');
+
+  it("names each of the ten as the Start menu's line does, with the Start menu's hotkey", () => {
+    expect(MOBILE_SHORTCUTS.map(({ applet, label }) => shortcutTip(applet, label).map((line) => line.map((run) => run.text).join(''))))
+      .toEqual([
+        ['Character', '[Hotkey H]'], ['Inventory', '[Hotkey I]'], ['Skills', '[Hotkey K]'], ['Quest Diary', '[Hotkey Q]'],
+        ['Teleport'], ['World Map', '[Hotkey M]'], ['Party', '[Hotkey P]'], ['Messenger', '[Hotkey E]'], ['Pet Filter', '[Hotkey U]'],
+        ['Siege Ranking'],
+      ]);
+    expect(startMenuName(AppId.PARTY)).toBe('Party'); // in the Community folder
+    expect(startMenuName(1)).toBeNull();
+  });
+
+  it('the name in black, the hotkey line in blue, in the texts catalog\'s word', () => {
+    expect(shortcutTip(AppId.INVENTORY, 'Bag', 'Raccourci')).toEqual([
+      [{ text: 'Inventory', color: 0x000000 }], [{ text: '[Raccourci I]', color: 0x0000ff }],
+    ]);
+  });
+
+  it('shows the tooltip while the mouse is over an icon, not for a finger; a press or leaving takes it away', () => {
+    const { tools, button } = rig();
+    hover(button('Bag'), 'touch');
+    expect(tip()).toBeNull();
+    hover(button('Bag'), 'mouse');
+    expect(tip()!.textContent).toBe('Inventory[Hotkey I]');
+    expect(tip()!.classList.contains('hud-taskbar-tooltip')).toBe(true);
+    hover(button('Bag'), 'mouse', 'pointerleave');
+    expect(tip()).toBeNull();
+    hover(button('Skill'), 'mouse');
+    expect(tip()!.textContent).toBe('Skills[Hotkey K]');
+    button('Skill').click();
+    expect(tip()).toBeNull();
+    hover(button('Skill'), 'mouse');
+    tools.dispose();
+    expect(tip()).toBeNull();
   });
 });
 

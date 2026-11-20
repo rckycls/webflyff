@@ -2,7 +2,8 @@
 // with no box or border, smoothed; since 2026-11-13 two rows left of the Navigator, 4 px between the icons (owner:
 // "reduce the space"), the target bar back at the top centre clear of them, the quest list at the left; since 2026-11-18
 // (owner, "2 rows of 5 include pet filter and autoplay") two rows of five, the target bar stepping left of them where the
-// centre would meet them. Stats keeps its text, in a third row.
+// centre would meet them. Stats keeps its text, in a third row. 2026-11-20 (owner, "add the 10 icons like mobile in
+// desktop as well"): the desktop shows the same ten in the same two rows, left of the Navigator, with the task bar's tooltip.
 
 import { devices, expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -64,7 +65,7 @@ async function layout(page: Page): Promise<{
   });
 }
 
-test('top-right shortcuts: the important Start-menu icons in two rows of five on the phone, named everywhere', async ({ page, isMobile }, info) => {
+test('top-right shortcuts: the important Start-menu icons in two rows of five, on the phone and the desktop, named everywhere', async ({ page, isMobile }, info) => {
   await playGateway(page, createWorldScript({
     playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
     self: writeAddSelf(SELF_ID, { ...self, player: { ...SELF_PLAYER, own: newVagrantOwn() } }),
@@ -73,20 +74,20 @@ test('top-right shortcuts: the important Start-menu icons in two rows of five on
   await enterFlaris(page);
   await page.evaluate(() => window.__client!.pause());
   const tools = page.getByRole('toolbar', { name: 'Window shortcuts', includeHidden: true });
-  // each shortcut's name is its accessible name and its tooltip, on the desktop too
+  // each shortcut's name is its accessible name, on the desktop too (2026-11-20: an icon's tooltip is the task bar's, below)
   for (const name of LABELS) {
-    await expect(tools.getByRole('button', { name, exact: true, includeHidden: true })).toHaveAttribute('title', name);
+    await expect(tools.getByRole('button', { name, exact: true, includeHidden: true })).toHaveCount(1);
   }
   const size = page.viewportSize()!;
   const top = { x: 0, y: 0, width: size.width, height: 150 };
   if (!isMobile) {
-    // the desktop has the task bar's Start menu and hotkeys: no shortcuts at the top right
-    await expect(tools).toBeHidden();
-    // 2026-11-20 (owner, "remove ranking icon on top right for desktop"): no Siege Ranking button left of the Navigator;
-    // its window opens from the Start menu (below; the website's answer stands in for the route)
+    // the website's answer stands in for the Siege Ranking window's route
     await page.route('**/api/siege/ranking*', (route) => route.fulfill({
       json: { rows: [{ rank: 1, name: 'Zed', job: 1, guild: 'Alpha', points: 9 }], checkedAt: '2026-11-15T12:00:00+08:00' },
     }));
+    await expectDesktopIcons(page, info);
+    // 2026-11-20 (owner, "remove ranking icon on top right for desktop"): no Siege Ranking button left of the Navigator
+    // (its icon is among the ten now); its window opens from the Start menu too (below)
     await expect(page.locator('.hud-siege-button')).toHaveCount(0);
     await expectAutoButton(page, info, 'desktop');
     await page.getByRole('button', { name: 'Start' }).click();
@@ -275,6 +276,87 @@ test('top-right shortcuts: the important Start-menu icons in two rows of five on
     }
   }
 });
+
+/**
+ * 2026-11-20 (owner, "add the 10 icons like mobile in desktop as well"): the desktop shows the phone's ten, in the same
+ * two rows of five, at Client/Icon's 32 px in cells of 36, left of the Navigator (6 px between) at the top; clear of the
+ * status window, the target bar, the buffs and the AUTO button; under the mouse, the task bar's tooltip of an applet
+ * (the Start menu's name, "[Hotkey I]" in blue); a click opens the window, as the hotkey does.
+ */
+async function expectDesktopIcons(page: Page, info: { outputPath: (name: string) => string }): Promise<void> {
+  const size = page.viewportSize()!;
+  const tools = page.getByRole('toolbar', { name: 'Window shortcuts' });
+  await expect(tools).toBeVisible();
+  // Stats is the diagnostics panel's own button on the desktop
+  await expect(tools.getByRole('button', { name: 'Stats', exact: true, includeHidden: true })).toBeHidden();
+  for (const [name, file] of SHORTCUTS) {
+    const button = tools.getByRole('button', { name, exact: true });
+    await expect(button).toHaveText('');
+    await expect(button).not.toHaveAttribute('title', /./);
+    const icon = button.locator('.hud-mobile-tool-icon');
+    await expect(icon).toHaveCSS('background-image', new RegExp(`/bare/${file}\\.`));
+    const box = (await icon.boundingBox())!;
+    expect([box.width, box.height]).toEqual([32, 32]);
+  }
+  // pick the Aibatt, so the target bar shows at the top centre
+  const point = (await page.evaluate((id) => window.__client!.screenOf(id), aibatt.objectId))!;
+  const canvas = (await page.locator('.world-view canvas').boundingBox())!;
+  await page.mouse.click(canvas.x + point[0] * canvas.width, canvas.y + point[1] * canvas.height);
+  await page.evaluate(() => window.__client!.step(1));
+  await expect(page.locator('.hud-target')).toBeVisible();
+  const at = await layout(page);
+  expect(at.labels).toEqual(SHORTCUTS.map(([label]) => label));
+  const [first, second] = [at.icons.slice(0, 5), at.icons.slice(5)];
+  for (const row of [first, second]) {
+    row.forEach((icon, i) => {
+      expect(icon.y).toBeCloseTo(row[0]!.y, 0);
+      if (i > 0) expect(icon.x - row[i - 1]!.x).toBeCloseTo(36, 0);
+    });
+  }
+  expect(second[0]!.y - first[0]!.y).toBeCloseTo(36, 0);
+  second.forEach((icon, i) => expect(icon.x).toBeCloseTo(first[i]!.x, 0));
+  expect(first[0]!.y).toBeCloseTo(2, 0);
+  expect(at.navigator.x - (at.tools.x + at.tools.width)).toBeCloseTo(6, 0);
+  expect(at.tools.x).toBeGreaterThanOrEqual(at.status.x + at.status.width);
+  for (const icon of at.icons) {
+    expect(overlap(at.target!, icon), 'target over an icon').toBe(false);
+    for (const [name, other] of Object.entries(at.others)) expect(overlap(other, icon), `an icon over ${name}`).toBe(false);
+  }
+  await page.screenshot({ path: info.outputPath('icons-desktop.png'), clip: { x: 0, y: 0, width: size.width, height: 150 } });
+  await page.screenshot({ path: info.outputPath('screen-desktop.png') });
+
+  // the task bar's tooltip of an applet under the mouse
+  await tools.getByRole('button', { name: 'Bag', exact: true }).hover();
+  const tip = page.locator('.hud-shortcut-tooltip');
+  await expect(tip).toBeVisible();
+  await expect(tip.locator('.hud-item-tooltip-line')).toHaveText(['Inventory', '[Hotkey I]']);
+  await expect(tip.locator('.hud-item-tooltip-line').nth(1).locator('span')).toHaveCSS('color', 'rgb(0, 0, 255)');
+  const tipBox = (await tip.boundingBox())!, bagBox = (await tools.getByRole('button', { name: 'Bag', exact: true }).boundingBox())!;
+  expect(tipBox.y).toBeGreaterThanOrEqual(bagBox.y + bagBox.height);
+  await page.screenshot({ path: info.outputPath('tooltip-desktop.png'), clip: { x: size.width / 2, y: 0, width: size.width / 2, height: 180 } });
+  await tools.getByRole('button', { name: 'Teleport', exact: true }).hover();
+  await expect(tip.locator('.hud-item-tooltip-line')).toHaveText(['Teleport']);
+  await page.mouse.move(size.width / 2, size.height / 2);
+  await expect(tip).toHaveCount(0);
+
+  // a click opens the window (and closes it), as the Start menu's line and the hotkey do
+  for (const [name, selector] of [
+    ['Character', '.hud-character'], ['Bag', '.hud-inventory'], ['Skill', '.hud-skills'], ['Quest', '.hud-quests'],
+    ['Teleport', '.hud-teleport'], ['World Map', '.hud-worldmap'], ['Party', '.hud-party'], ['Messenger', '.hud-messenger'],
+    ['Pet Filter', '.hud-pet-filter'], ['Siege Ranking', '.hud-sr'],
+  ] as const) {
+    await tools.getByRole('button', { name, exact: true }).click();
+    await expect(page.locator(selector).first(), name).toBeVisible();
+    if (name === 'Bag') await page.screenshot({ path: info.outputPath('window-open-desktop.png') });
+    // a second click closes it (dispatched: the window may lie over its icon)
+    await tools.getByRole('button', { name, exact: true }).dispatchEvent('click');
+    await expect(page.locator(selector).first(), name).toBeHidden();
+  }
+  await page.keyboard.press('i');
+  await expect(page.locator('.hud-inventory')).toBeVisible();
+  await page.keyboard.press('i');
+  await expect(page.locator('.hud-inventory')).toBeHidden();
+}
 
 /**
  * 2026-11-20 (owner, "move Autoplay button icon to the place of Auto icon. Add an active autoplay indicator"): the AUTO

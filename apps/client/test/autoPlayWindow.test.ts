@@ -59,6 +59,10 @@ function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
     [...within.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.getAttribute('aria-label') === label || b.textContent === label)!.click();
   return { w, play, saves: () => saves, savers: () => savers, row, press };
 }
+/** 2026-11-20: the Start / Stop bar under the tabs, its button and its state line. */
+const bar = (w: AutoPlayWindow) => w.frame.element.querySelector<HTMLElement>('.auto-play-run')!;
+const goButton = (w: AutoPlayWindow) => bar(w).querySelector<HTMLButtonElement>('[data-auto-play="go"]')!;
+const state = (w: AutoPlayWindow) => bar(w).querySelector('.auto-farm-state')!.textContent;
 
 describe('AutoPlayWindow: Potions tab', () => {
   it('opens on the Farm tab; Potions has its three rows', () => {
@@ -168,28 +172,28 @@ describe('AutoPlayWindow: Farm tab', () => {
   it('Start runs it; then Stop stops it as "you took control"', () => {
     const { w, play, press } = rig();
     w.open();
-    press(farm(w), 'Start');
+    press(bar(w), 'Start');
     expect(play.farm).toBe('running');
     w.refresh();
-    press(farm(w), 'Stop');
+    press(bar(w), 'Stop');
     expect(play.lastStop).toBe('you took control');
   });
 
   it('while it runs, Battery saver opens the saver screen', () => {
     const { w, press, savers } = rig();
     w.open();
-    expect([...farm(w).querySelectorAll('button')].some((b) => b.textContent === 'Battery saver')).toBe(false);
-    press(farm(w), 'Start');
-    press(farm(w), 'Battery saver');
+    expect([...bar(w).querySelectorAll('button')].some((b) => b.textContent === 'Battery saver')).toBe(false);
+    press(bar(w), 'Start');
+    press(bar(w), 'Battery saver');
     expect(savers()).toBe(1);
   });
 
   it('Start is greyed where farming is not allowed', () => {
     const { w } = rig(defaultSettings(), false);
     w.open();
-    const start = [...farm(w).querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Start')!;
-    expect(start.disabled).toBe(true);
-    expect(farm(w).textContent).toContain('Not allowed here.');
+    expect(goButton(w).textContent).toBe('Start');
+    expect(goButton(w).disabled).toBe(true);
+    expect(state(w)).toBe('Not allowed here.');
   });
 
   it('the status shows the stop reason after a stop, and the counts', () => {
@@ -197,8 +201,63 @@ describe('AutoPlayWindow: Farm tab', () => {
     play.farm = 'stopped';
     play.lastStop = 'you died';
     w.open();
-    expect(farm(w).querySelector('.auto-farm-state')!.textContent).toBe('Stopped: you died');
+    expect(state(w)).toBe('Stopped: you died');
     expect(farm(w).querySelector('.auto-farm-stats')!.textContent).toContain('Kills 0');
+  });
+});
+
+// 2026-11-20 (owner): "stop and start should be inside the autoplay window": one bar under the tabs, on every tab
+describe('AutoPlayWindow: the Start / Stop bar', () => {
+  it('is under the tab strip on every tab, Start while off, Stop while it runs, with what it does beside it', () => {
+    const { w, play } = rig();
+    w.open();
+    for (const tab of ['farm', 'potions', 'skills', 'support'] as const) {
+      w.showTab(tab);
+      expect(bar(w).parentElement).toBe(w.frame.body);
+      expect(goButton(w).getAttribute('data-auto-play')).toBe('go');
+    }
+    w.showTab('potions');
+    expect([goButton(w).textContent, state(w)]).toEqual(['Start', 'Off']);
+    goButton(w).click();
+    expect([play.farm, play.mode]).toEqual(['running', 'farm']);
+    w.refresh();
+    expect([goButton(w).textContent, state(w), bar(w).dataset.state]).toEqual(['Stop', 'Running: seeking', 'running']);
+    play.bagIsFull = true;
+    w.refresh();
+    expect(state(w)).toBe('Running: seeking (bag full)');
+  });
+
+  it('Stop on any tab stops what runs, Support mode too', () => {
+    const { w, play, press } = rig();
+    w.open('support');
+    press(w.frame.element.querySelector<HTMLElement>('.auto-support')!, 'Use target');
+    goButton(w).click();
+    expect([play.farm, play.mode]).toEqual(['running', 'support']);
+    w.showTab('skills');
+    expect(goButton(w).textContent).toBe('Stop');
+    expect(bar(w).querySelector('[data-auto-play="saver"]')).toBeNull(); // the saver is the farm bot's
+    goButton(w).click();
+    expect([play.farm, play.lastStop]).toEqual(['stopped', 'you took control']);
+  });
+
+  it('the week used up: Start greyed and "Weekly limit reached." on every tab, the stop line after a run cut short', () => {
+    usage = { usedMin: 840, limitMin: 840, resetsAt: '' };
+    try {
+      const { w, play } = rig();
+      w.open();
+      expect([goButton(w).disabled, state(w)]).toEqual([true, 'Weekly limit reached.']);
+      w.showTab('support');
+      expect([goButton(w).disabled, state(w)]).toEqual([true, 'Weekly limit reached.']);
+      play.farm = 'stopped';
+      play.lastStop = 'weekly limit reached';
+      w.showTab('farm');
+      expect(state(w)).toBe('Weekly limit reached.');
+      usage = { usedMin: 10, limitMin: 840, resetsAt: '' };
+      w.refresh();
+      expect([goButton(w).disabled, state(w)]).toEqual([false, 'Stopped: weekly limit reached']);
+    } finally {
+      usage = null;
+    }
   });
 });
 
@@ -372,13 +431,13 @@ describe('AutoPlayWindow: Support tab', () => {
     const s = defaultSettings();
     const { w, play, press } = rig(s);
     w.open('support');
-    const start = () => [...page(w).querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Start')!;
-    expect(start().disabled).toBe(true);
+    expect([goButton(w).disabled, state(w)]).toEqual([true, 'No partner.']);
     press(page(w), 'Use target');
-    press(page(w), 'Start');
+    expect([goButton(w).disabled, state(w)]).toEqual([false, 'Off']);
+    press(bar(w), 'Start');
     expect([play.farm, play.mode]).toEqual(['running', 'support']);
     w.refresh();
-    press(page(w), 'Stop');
+    press(bar(w), 'Stop');
     expect(play.lastStop).toBe('you took control');
   });
 });
@@ -402,7 +461,7 @@ describe('AutoPlayWindow: the hours of this week', () => {
     const { w } = rig();
     w.open('farm');
     expect(line(w, '.auto-farm')!.textContent).toBe('This week: 0s left of 14h');
-    expect([...w.frame.element.querySelectorAll<HTMLButtonElement>('.auto-farm button')].find((b) => b.textContent === 'Start')!.disabled).toBe(true);
+    expect(goButton(w).disabled).toBe(true);
     usage = { usedMin: 9000, limitMin: null, resetsAt: '' };
     w.refresh();
     expect(line(w, '.auto-farm')!.textContent).toBe('This week: no limit');

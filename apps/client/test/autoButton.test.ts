@@ -1,23 +1,19 @@
 // @vitest-environment jsdom
 // custom (owner 2026-11-15): the AUTO button and the stopped title (hud/autoPlay/autoButton.ts).
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { AutoButton, flashStoppedTitle } from '../src/world/hud/autoPlay/autoButton';
 
 afterEach(() => { document.body.replaceChildren(); });
 
 function rig() {
-  let opened = 0;
+  let toggles = 0;
   const play = {
     farm: 'off' as 'off' | 'running' | 'stopped',
     lastStop: null as string | null,
-    start: () => { play.farm = 'running'; play.lastStop = null; return true; },
-    stop: (reason: string) => { play.farm = 'stopped'; play.lastStop = reason; },
-    startMode: () => { play.farm = 'running'; play.lastStop = null; modeStarts++; return true; },
   };
-  let modeStarts = 0;
-  const button = new AutoButton(play, () => { opened++; }, document);
+  const button = new AutoButton(play, () => { toggles++; }, document);
   document.body.append(button.element);
-  return { button, play, opened: () => opened, modeStarts: () => modeStarts };
+  return { button, play, toggles: () => toggles };
 }
 
 describe('AutoButton', () => {
@@ -28,17 +24,31 @@ describe('AutoButton', () => {
     expect(button.element.querySelector<HTMLElement>('.hud-auto-icon')!.style.backgroundImage).toMatch(/icon_autoplay\.png/);
   });
 
-  it('a click starts the farm bot, a second click stops it', () => {
-    const { button, play } = rig();
+  // 2026-11-20 (owner): "the autoplay icon on display should open the autoplay window when clicked and not just stop and
+  // start the autoplay. stop and start should be inside the autoplay window"
+  it('a click opens (or closes) the Auto Play window and starts or stops nothing', () => {
+    const { button, play, toggles } = rig();
     button.element.click();
-    expect(play.farm).toBe('running');
+    expect(toggles()).toBe(1);
+    expect(play.farm).toBe('off');
+    play.farm = 'running';
     button.refresh();
-    expect(button.element.dataset.state).toBe('running');
     button.element.click();
-    expect(play.lastStop).toBe('you took control');
+    expect(toggles()).toBe(2);
+    expect(play.farm).toBe('running');
   });
 
-  it('shows ! after a stop, with the reason, and clears it on the next start', () => {
+  it('glows while Auto Play runs (data-state), and its tip says so', () => {
+    const { button, play } = rig();
+    expect(button.element.dataset.state).toBe('off');
+    expect(button.element.title).toBe('Auto Play');
+    play.farm = 'running';
+    button.refresh();
+    expect(button.element.dataset.state).toBe('running');
+    expect(button.element.title).toBe('Auto Play: running');
+  });
+
+  it('shows ! after a stop, with the reason, and clears it when it runs again', () => {
     const { button, play } = rig();
     play.farm = 'stopped';
     play.lastStop = 'you died';
@@ -46,42 +56,20 @@ describe('AutoButton', () => {
     expect(button.element.dataset.state).toBe('stopped');
     expect(button.element.querySelector('.hud-auto-mark')!.textContent).toBe('!');
     expect(button.element.title).toBe('Auto Play stopped: you died');
-    button.element.click();
+    play.farm = 'running';
+    play.lastStop = null;
     button.refresh();
     expect(button.element.dataset.state).toBe('running');
     expect(button.element.querySelector('.hud-auto-mark')!.textContent).toBe('');
   });
 
-  it('a right-click opens the window and starts nothing', () => {
-    const { button, play, opened } = rig();
-    button.element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    expect(opened()).toBe(1);
+  it('a right-click (or a long press) brings no browser menu and does nothing else', () => {
+    const { button, play, toggles } = rig();
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    button.element.dispatchEvent(menu);
+    expect(menu.defaultPrevented).toBe(true);
+    expect(toggles()).toBe(0);
     expect(play.farm).toBe('off');
-  });
-});
-
-describe('AutoButton on a phone (M4)', () => {
-  it('a long press (500 ms) opens the window and the click after it starts nothing; a short tap starts', () => {
-    vi.useFakeTimers();
-    try {
-      const { button, play, opened } = rig();
-      button.element.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-      vi.advanceTimersByTime(499);
-      expect(opened()).toBe(0);
-      vi.advanceTimersByTime(1);
-      expect(opened()).toBe(1);
-      button.element.dispatchEvent(new Event('pointerup', { bubbles: true }));
-      button.element.click();
-      expect(play.farm).toBe('off');
-      button.element.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-      vi.advanceTimersByTime(200);
-      button.element.dispatchEvent(new Event('pointerup', { bubbles: true }));
-      button.element.click();
-      expect(play.farm).toBe('running');
-      expect(opened()).toBe(1);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 
@@ -102,13 +90,5 @@ describe('flashStoppedTitle', () => {
     expect(document.title).toBe('(!) Stopped - FlyffWeb');
     setHidden(false);
     expect(document.title).toBe('FlyffWeb');
-  });
-});
-
-describe('AutoButton: the mode last started (2026-11-17)', () => {
-  it('a click starts the mode last started (startMode), farm or Support', () => {
-    const { button, modeStarts } = rig();
-    button.element.click();
-    expect(modeStarts()).toBe(1);
   });
 });
