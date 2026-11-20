@@ -332,17 +332,24 @@ FROM dbo.CHARACTER_TBL c
 WHERE c.m_idPlayer = @idPlayer AND c.serverindex = '01'
 GO
 
+-- The accounts never counted as players (web-login.sql makes it too; whichever runs first makes it).
+IF OBJECT_ID(N'dbo.WEB_NOT_COUNTED', N'U') IS NULL
+	CREATE TABLE dbo.WEB_NOT_COUNTED (account varchar(32) NOT NULL CONSTRAINT PK_WEB_NOT_COUNTED PRIMARY KEY)
+GO
+
 IF OBJECT_ID(N'dbo.usp_AdminOnlineList', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminOnlineList
 GO
 CREATE PROCEDURE dbo.usp_AdminOnlineList
 AS
 SET NOCOUNT ON
-SELECT m_idPlayer AS idPlayer, m_szName AS name, account, m_nLevel AS level, m_nJob AS job, playerslot AS slot,
-	CAST(CASE WHEN isblock = 'D' THEN 1 ELSE 0 END AS bit) AS deleted, CAST(1 AS bit) AS online, dwWorldID AS worldId,
-	m_chAuthority AS authority
-FROM dbo.CHARACTER_TBL
-WHERE serverindex = '01' AND MultiServer > 0
-ORDER BY m_szName
+SELECT c.m_idPlayer AS idPlayer, c.m_szName AS name, c.account, c.m_nLevel AS level, c.m_nJob AS job, c.playerslot AS slot,
+	CAST(CASE WHEN c.isblock = 'D' THEN 1 ELSE 0 END AS bit) AS deleted, CAST(1 AS bit) AS online, c.dwWorldID AS worldId,
+	c.m_chAuthority AS authority,
+	CAST(CASE WHEN n.account IS NULL THEN 1 ELSE 0 END AS bit) AS counted
+FROM dbo.CHARACTER_TBL c
+LEFT JOIN dbo.WEB_NOT_COUNTED n ON n.account = c.account
+WHERE c.serverindex = '01' AND c.MultiServer > 0
+ORDER BY CAST(CASE WHEN n.account IS NULL THEN 0 ELSE 1 END AS int), c.m_szName
 GO
 
 -- The panel calls the character edits below only while the Database and World servers are stopped (spec 4.3).

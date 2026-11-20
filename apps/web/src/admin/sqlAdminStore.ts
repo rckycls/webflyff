@@ -43,6 +43,7 @@ function characterRow(r: Row): CharacterRow {
     idPlayer: trimmed(r.idPlayer), name: trimmed(r.name), account: trimmed(r.account), level: num(r.level), job: num(r.job),
     slot: num(r.slot), deleted: r.deleted === true || r.deleted === 1, online: r.online === true || r.online === 1,
     worldId: num(r.worldId), authority: trimmed(r.authority),
+    ...(r.counted === undefined ? {} : { counted: r.counted === true || r.counted === 1 }),
   };
 }
 

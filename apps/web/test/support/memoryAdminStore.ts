@@ -195,7 +195,7 @@ export class MemoryAdminStore implements AdminStore {
 
   async onlineCharacters(): Promise<CharacterRow[]> {
     this.call('onlineCharacters');
-    return this.characters.filter((c) => c.online).map(MemoryAdminStore.characterRow);
+    return this.characters.filter((c) => c.online).map((c) => ({ ...MemoryAdminStore.characterRow(c), counted: c.counted !== false }));
   }
 
   async renameCharacter(idPlayer: string, name: string): Promise<'ok' | 'taken' | 'missing'> {

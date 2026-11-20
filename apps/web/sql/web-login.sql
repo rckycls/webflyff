@@ -2,7 +2,10 @@
 -- the password variable; it can be run again (it then sets the password anew and keeps the rest).
 --
 -- It makes:
---   CHARACTER_01_DBF.dbo.usp_WebOnlineCount: the characters in a world now (CHARACTER_TBL.MultiServer > 0);
+--   CHARACTER_01_DBF.dbo.WEB_NOT_COUNTED: accounts whose characters are never counted as players (filled by the
+--   server's own scripts; the web service never writes it);
+--   CHARACTER_01_DBF.dbo.usp_WebOnlineCount: the characters in a world now (CHARACTER_TBL.MultiServer > 0), but not
+--   those of WEB_NOT_COUNTED's accounts;
 --   CHARACTER_01_DBF.dbo.usp_WebSiegeWeekly, usp_WebSiegeRankingPlayer, usp_WebSiegeRankingGuild: the Guild Siege
 --   weekly winner and the rankings (only ended sieges, tblCombatInfo.Status = '30', server '01');
 --   the SQL login flyffweb_site (password policy on), with a user in ACCOUNT_DBF and in CHARACTER_01_DBF that may
@@ -11,13 +14,17 @@
 
 USE [CHARACTER_01_DBF]
 GO
+IF OBJECT_ID(N'dbo.WEB_NOT_COUNTED', N'U') IS NULL
+	CREATE TABLE dbo.WEB_NOT_COUNTED (account varchar(32) NOT NULL CONSTRAINT PK_WEB_NOT_COUNTED PRIMARY KEY)
+GO
 -- CREATE OR ALTER needs SQL Server 2016 SP1; this form works on older ones too
 IF OBJECT_ID(N'dbo.usp_WebOnlineCount', N'P') IS NULL EXEC (N'CREATE PROCEDURE dbo.usp_WebOnlineCount AS RETURN 0')
 GO
 ALTER PROCEDURE dbo.usp_WebOnlineCount
 AS
 SET NOCOUNT ON
-SELECT COUNT(*) AS players FROM dbo.CHARACTER_TBL WHERE MultiServer > 0
+SELECT COUNT(*) AS players FROM dbo.CHARACTER_TBL c
+WHERE c.MultiServer > 0 AND NOT EXISTS (SELECT 1 FROM dbo.WEB_NOT_COUNTED n WHERE n.account = c.account)
 GO
 
 -- The latest siege that ended on a Saturday between 20:00 and 21:59 within the last 7 days (the weekly winner):

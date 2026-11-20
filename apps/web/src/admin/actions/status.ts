@@ -17,7 +17,10 @@ const status: ActionHandler = async (_body, _ctx, deps) => {
   let online: CharacterRow[] | null = null;
   if (sql && !stale) online = await deps.store.onlineCharacters().catch(() => null);
   return reply(200, {
-    servers, gateway: gateway === 'open', sql, stale, online, players: online === null ? null : online.length,
+    servers, gateway: gateway === 'open', sql, stale, online,
+    // the accounts left out of the counts (WEB_NOT_COUNTED) are not players
+    players: online === null ? null : online.filter((c) => c.counted !== false).length,
+    bots: online === null ? null : online.filter((c) => c.counted === false).length,
     charactersOpen: lock.open, lockSeen: lock.seen,
   });
 };
