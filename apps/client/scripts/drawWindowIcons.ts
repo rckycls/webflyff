@@ -186,6 +186,33 @@ const PICTURES: Record<string, string> = {
 <circle cx="18.4" cy="13.2" r="1.2" fill="#fff"/>
 <path d="${starPath(24.6, 21.4, 2, 0.5, 4)}" fill="#f4e6ff" stroke="#7a3ad8" stroke-width=".45" stroke-linejoin="round"/>
 <path d="${starPath(8.4, 8.4, 1.7, 0.42, 4)}" fill="#f4e6ff" stroke="#7a3ad8" stroke-width=".45" stroke-linejoin="round"/>`,
+
+  // custom (owner 2026-11-20): the Quick Job Change window: a steel sword and a wooden staff crossed, a gold arrow rising
+  // over them (the next job)
+  icon_jobchange: `
+<defs>
+  <linearGradient id="jcBlade" x1="0" y1="-1.5" x2="0" y2="1.5" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#c8d2e6"/><stop offset="1" stop-color="#6a7896"/>
+  </linearGradient>
+  <linearGradient id="jcStaff" x1="0" y1="-1.2" x2="0" y2="1.2" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#e8b878"/><stop offset=".55" stop-color="#a8682c"/><stop offset="1" stop-color="#6a3a12"/>
+  </linearGradient>
+  <linearGradient id="jcArrow" x1="0" y1="4" x2="0" y2="20" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#fff6b8"/><stop offset=".45" stop-color="#ffc42a"/><stop offset="1" stop-color="#c87a08"/>
+  </linearGradient>
+</defs>
+<g transform="translate(7.6 24.6) rotate(-45)">
+  <path d="M1.2 -1.5 H16.6 L19 0 L16.6 1.5 H1.2 Z" fill="url(#jcBlade)" stroke="#2c2a4a" stroke-width=".8" stroke-linejoin="round"/>
+  <path d="M-.3 -3.4 H1.2 V3.4 H-.3 Z" fill="#f4b42a" stroke="#5a3006" stroke-width=".7" stroke-linejoin="round"/>
+  <rect x="-3.8" y="-.8" width="3.5" height="1.6" fill="#7a3e1a" stroke="#3a1a08" stroke-width=".6"/>
+</g>
+<g transform="translate(24.4 24.6) rotate(-135)">
+  <rect x="0" y="-1.1" width="18" height="2.2" rx="1" fill="url(#jcStaff)" stroke="#3a1a08" stroke-width=".7"/>
+  <circle cx="19.2" cy="0" r="2.3" fill="#7ad8ff" stroke="#1c5a8a" stroke-width=".7"/>
+  <circle cx="18.6" cy="-.6" r=".7" fill="#fff"/>
+</g>
+<path d="M15.5 4.2 L21.4 11 H18 V19.6 H13 V11 H9.6 Z" fill="url(#jcArrow)" stroke="#7a4206" stroke-width=".9" stroke-linejoin="round"/>
+<path d="M15.5 6.4 L18.6 10.2" stroke="#fff" stroke-width=".7" opacity=".85" stroke-linecap="round"/>`,
 };
 
 /** An SVG of 32 x 32: the rim and panel (framed only), then the orb and the picture, kept inside the panel. */

@@ -1159,7 +1159,11 @@ describe('APPLETS (CWndMgr::AddAllApplet, FuncApplet.cpp:178-301)', () => {
         expect(OWN_ICONS.get(key)!.includes('/bare/')).toBe(key.startsWith('ui/bare/'));
       }
     }
-    expect(OWN_ICONS.size).toBe(16); // and the four VIP stars and the two weekly crests (render/nameTags.ts)
+    // custom (owner 2026-11-20): the Quick Job Change window's icon, framed and not, and its 24 job portraits
+    expect(OWN_ICONS.get('ui/icon_jobchange.png')).toMatch(/icon_jobchange\.png$/);
+    expect(OWN_ICONS.get('ui/bare/icon_jobchange.png')).toMatch(/bare\/icon_jobchange\.png$/);
+    // and the four VIP stars and the two weekly crests (render/nameTags.ts)
+    expect(OWN_ICONS.size).toBe(16 + 2 + 24);
   });
 });
 
