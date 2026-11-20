@@ -7,7 +7,7 @@ import type { CodeApiLike, CodeView } from '../src/world/codes/codeRedeemer';
 
 const NOW = Date.UTC(2026, 10, 20);
 const DAY = 86_400_000;
-const OFFER: CodeOfferView = { codeId: 3, label: 'Launch', vipLevel: 0, vipDays: 0, expiresAt: '2026-12-15T12:00:00Z', items: [{ itemId: 10206, count: 5 }, { itemId: 4805, count: 2 }] };
+const OFFER: CodeOfferView = { codeId: 3, label: 'Launch', vipLevel: 0, vipDays: 0, expiresAt: '2026-12-15T12:00:00Z', items: [{ itemId: 10206, count: 5 }, { itemId: 4805, count: 2 }], bound: false };
 
 function setUp(api: Partial<CodeApiLike> = {}, free = 14) {
   const calls = { redeem: [] as Array<[string, number, string, boolean]>, expected: [] as number[], said: [] as string[] };

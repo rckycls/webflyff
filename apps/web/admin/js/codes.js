@@ -26,7 +26,7 @@ function givesText(code) {
   const parts = [];
   if (code.vipLevel > 0) parts.push(`VIP ${code.vipLevel} for ${code.vipDays} day${code.vipDays === 1 ? '' : 's'}`);
   for (const i of code.items) parts.push(`${i.name ?? `item ${i.itemId}`} x${i.count}`);
-  return parts.join(', ');
+  return `${parts.join(', ')}${code.bound && code.items.length > 0 ? ' (bound)' : ''}`;
 }
 
 function usesText(code) {
@@ -94,6 +94,8 @@ function makeForm(onMade) {
   const accounts = el('textarea', { rows: '4', placeholder: 'one account per line', 'aria-label': 'Accounts' });
   const count = el('input', { type: 'number', min: '1', max: '500', value: '10', 'aria-label': 'How many codes' });
   const expiresAt = el('input', { type: 'datetime-local', value: localInput(Date.now() + 7 * 86_400_000), 'aria-label': 'End time' });
+  // owner 2026-11-20: the items come bound to the character that redeems (the game's binds flag)
+  const bound = el('input', { type: 'checkbox', 'aria-label': 'Bound (can\'t trade)' });
   const made = el('div');
   const capRow = el('label', {}, 'Most uses ', maxUses);
   const wordRow = el('label', {}, ' Code ', word);
@@ -118,6 +120,7 @@ function makeForm(onMade) {
     el('div', { class: 'row' }, el('label', {}, 'VIP ', vipLevel), daysRow),
     el('div', { class: 'table-box' }, el('table', {}, el('thead', {}, el('tr', {}, ['', 'Item (optional)', 'Count'].map((h) => el('th', { text: h })))),
       el('tbody', {}, items.map((i) => i.node)))),
+    el('label', {}, bound, ' Bound (can\'t trade): the items can\'t be traded, dropped, mailed, sold in a private shop or put in the guild bank'),
     el('div', { class: 'row' }, el('label', {}, 'Who ', kind), ' ', capRow, wordRow, countRow),
     accountsRow,
     el('label', {}, 'Ends ', expiresAt, el('span', { class: 'small', text: ' (your time)' })),
@@ -130,7 +133,7 @@ function makeForm(onMade) {
       if (stacks.includes('unpicked')) throw new Error('Pick each item from the search (or empty its box).');
       const body = {
         label: label.value.trim(), vipLevel: Number(vipLevel.value), vipDays: Number(vipDays.value), items: stacks.filter((s) => s !== null),
-        kind: kind.value, expiresAt: isoOf(expiresAt.value),
+        kind: kind.value, expiresAt: isoOf(expiresAt.value), bound: bound.checked,
         ...(kind.value === 'E' && maxUses.value.trim() !== '' ? { maxUses: Number(maxUses.value) } : {}),
         ...(kind.value !== 'K' && word.value.trim() !== '' ? { word: word.value.trim() } : {}),
         ...(kind.value === 'L' ? { accounts: accounts.value } : {}),

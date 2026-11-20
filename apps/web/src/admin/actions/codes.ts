@@ -137,9 +137,15 @@ const add = withCodes(async (body, ctx, deps, codes) => {
     }
   }
 
-  const before = { label, kind, vipLevel, vipDays, items, maxUses, keys: codeKeys.length, accounts: accounts.length, expiresAt };
+  // owner 2026-11-20: "Bound (can't trade)": its items come with the game's binds flag
+  if (body.bound !== undefined && typeof body.bound !== 'boolean') return invalid('bound');
+  const bound = body.bound === true;
+
+  const before = { label, kind, vipLevel, vipDays, items, bound, maxUses, keys: codeKeys.length, accounts: accounts.length, expiresAt };
   return runAudited(deps, ctx, { action: 'codes.add', before }, async () => {
-    const done = await codes.add({ label, kind: kind as CodeKind, vipLevel, vipDays, maxUses, expiresAt, items, keys: codeKeys, accounts, admin: ctx.session.user });
+    const done = await codes.add({
+      label, kind: kind as CodeKind, vipLevel, vipDays, maxUses, expiresAt, items, keys: codeKeys, accounts, admin: ctx.session.user, bound,
+    });
     if ('id' in done) return { answer: okReply({ id: done.id, keys: codeKeys.map(showKey) }), result: 'ok', after: { id: done.id } };
     if (done.refused === 'key_taken') {
       const answer = kind === 'K'

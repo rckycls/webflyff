@@ -24,7 +24,10 @@ export interface VipPageData { tiers: VipTier[]; qrs: PayQr[]; maxPending: numbe
 
 // 2026-11-20 (redeem codes): the code routes' answers (apps/web/src/codes/siteCodes.ts)
 export interface VipLive { level: number; endsAt: string }
-export interface CodeOfferView { codeId: number; label: string; vipLevel: number; vipDays: number; expiresAt: string; items: Array<{ itemId: number; count: number }> }
+/** `bound` (owner 2026-11-20): the items come bound to the character (the game's binds flag: no trade). */
+export interface CodeOfferView {
+  codeId: number; label: string; vipLevel: number; vipDays: number; expiresAt: string; items: Array<{ itemId: number; count: number }>; bound: boolean;
+}
 export interface CodeCheckView { offer: CodeOfferView; vip: VipLive | null; replaces: boolean }
 export interface CodeRedeemView { useId: number; offer: CodeOfferView; vip: VipLive | null; repeat: boolean }
 
@@ -60,6 +63,7 @@ function readOffer(value: unknown): CodeOfferView | null {
   return {
     codeId: Number(o.codeId ?? 0), label: String(o.label ?? ''), vipLevel: Number(o.vipLevel ?? 0), vipDays: Number(o.vipDays ?? 0),
     expiresAt: String(o.expiresAt ?? ''), items: items.map((i) => ({ itemId: Number(i.itemId ?? 0), count: Number(i.count ?? 0) })),
+    bound: o.bound === true,
   };
 }
 

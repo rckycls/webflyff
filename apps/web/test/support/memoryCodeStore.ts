@@ -15,7 +15,7 @@ const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCas
 
 interface CodeRowMem {
   id: number; label: string; kind: CodeKind; vipLevel: number; vipDays: number; maxUses: number | null; uses: number;
-  expiresAt: number; on: boolean; createdAt: number; createdBy: string; items: CodeItem[]; accounts: string[];
+  expiresAt: number; on: boolean; createdAt: number; createdBy: string; items: CodeItem[]; accounts: string[]; bound: boolean;
 }
 interface KeyRowMem { id: number; codeId: number; key: string; usedBy: string | null; usedAt: number | null }
 interface UseRowMem {
@@ -31,7 +31,8 @@ export class MemoryCodeStore implements CodeSiteStore, CodeAdminStore, CodeMailS
   readonly keyRows: KeyRowMem[] = [];
   readonly useRows: UseRowMem[] = [];
   /** The mails written (MAIL_STR 'A1' into server index 51), in order. */
-  readonly mails: Array<{ useId: number; idPlayer: string; itemId: number; count: number; title: string; text: string }> = [];
+  /** `bound`: written with the binds flag (MAIL_TBL.byFlag 2). */
+  readonly mails: Array<{ useId: number; idPlayer: string; itemId: number; count: number; title: string; text: string; bound: boolean }> = [];
   /** WEB_CODE_SENT. */
   readonly sent = new Map<number, { idPlayer: string; characterName: string }>();
   /** Methods made to throw, for the failure tests. */
@@ -47,7 +48,7 @@ export class MemoryCodeStore implements CodeSiteStore, CodeAdminStore, CodeMailS
   }
 
   private offer(code: CodeRowMem): CodeOffer {
-    return { codeId: code.id, label: code.label, vipLevel: code.vipLevel, vipDays: code.vipDays, expiresAt: iso(code.expiresAt), items: code.items.map((i) => ({ ...i })) };
+    return { codeId: code.id, label: code.label, vipLevel: code.vipLevel, vipDays: code.vipDays, expiresAt: iso(code.expiresAt), items: code.items.map((i) => ({ ...i })), bound: code.bound };
   }
 
   private live(account: string): LiveVip | null {
@@ -149,7 +150,7 @@ export class MemoryCodeStore implements CodeSiteStore, CodeAdminStore, CodeMailS
     const id = this.nextCode++;
     this.codeRows.push({
       id, label: code.label, kind: code.kind, vipLevel: code.vipLevel, vipDays: code.vipDays, maxUses: code.maxUses, uses: 0,
-      expiresAt: expires, on: true, createdAt: now, createdBy: code.admin, items: code.items.map((i) => ({ ...i })),
+      expiresAt: expires, on: true, createdAt: now, createdBy: code.admin, items: code.items.map((i) => ({ ...i })), bound: code.bound === true,
       accounts: [...new Set(code.accounts.map((a) => this.vip.accountOf(a)!))],
     });
     for (const key of keys) this.keyRows.push({ id: this.nextKey++, codeId: id, key, usedBy: null, usedAt: null });
@@ -162,6 +163,7 @@ export class MemoryCodeStore implements CodeSiteStore, CodeAdminStore, CodeMailS
       id: code.id, label: code.label, kind: code.kind, vipLevel: code.vipLevel, vipDays: code.vipDays, maxUses: code.maxUses, uses: code.uses,
       keysTotal: keys.length, keysUnused: keys.filter((k) => k.usedBy === null).length, firstKey: code.kind === 'K' ? null : keys[0]?.key ?? null,
       expiresAt: iso(code.expiresAt), on: code.on, createdAt: iso(code.createdAt), createdBy: code.createdBy, items: code.items.map((i) => ({ ...i })),
+      bound: code.bound,
     };
   }
 
@@ -199,7 +201,7 @@ export class MemoryCodeStore implements CodeSiteStore, CodeAdminStore, CodeMailS
 
   private pendingRow(u: UseRowMem): PendingUse {
     const code = this.codeRows.find((c) => c.id === u.codeId)!;
-    return { id: u.id, codeId: u.codeId, label: code.label, account: u.account, idPlayer: u.idPlayer, items: code.items.map((i) => ({ ...i })) };
+    return { id: u.id, codeId: u.codeId, label: code.label, account: u.account, idPlayer: u.idPlayer, items: code.items.map((i) => ({ ...i })), bound: code.bound };
   }
 
   async pending(max: number, afterId: number): Promise<PendingUse[]> {
@@ -234,7 +236,7 @@ export class MemoryCodeStore implements CodeSiteStore, CodeAdminStore, CodeMailS
       ?? [...mine].sort((a, b) => Number(b.online ?? false) - Number(a.online ?? false) || (b.playTime ?? 0) - (a.playTime ?? 0) || a.idPlayer.localeCompare(b.idPlayer))[0];
     if (to === undefined) return { result: 0, idPlayer: null, characterName: null };
     for (const item of use.items.slice(0, 6)) {
-      if (item.itemId > 0 && item.count > 0) this.mails.push({ useId: use.id, idPlayer: to.idPlayer, itemId: item.itemId, count: item.count, title, text });
+      if (item.itemId > 0 && item.count > 0) this.mails.push({ useId: use.id, idPlayer: to.idPlayer, itemId: item.itemId, count: item.count, title, text, bound: use.bound });
     }
     this.sent.set(use.id, { idPlayer: to.idPlayer, characterName: to.name });
     return { result: 1, idPlayer: to.idPlayer, characterName: to.name };

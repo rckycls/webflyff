@@ -10,7 +10,7 @@ import type { RedeemCodeHost } from '../src/world/codes/redeemCodeWindow';
 import type { UiArt } from '../src/world/hud/art';
 
 const art: UiArt = { url: (key) => `/assets/${key}`, sheets: null };
-const OFFER: CodeOfferView = { codeId: 3, label: 'Launch', vipLevel: 2, vipDays: 7, expiresAt: '2026-12-15T12:00:00Z', items: [{ itemId: 10206, count: 5 }, { itemId: 4805, count: 2 }] };
+const OFFER: CodeOfferView = { codeId: 3, label: 'Launch', vipLevel: 2, vipDays: 7, expiresAt: '2026-12-15T12:00:00Z', items: [{ itemId: 10206, count: 5 }, { itemId: 4805, count: 2 }], bound: false };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 afterEach(() => {
@@ -99,4 +99,17 @@ it('pastes the clipboard into the code box', async () => {
   button('paste').click();
   await flush();
   expect(code.value).toBe('ABCD-EFGH-JKMN-PQRS');
+});
+
+it('says when a code\'s items come bound to the character (owner 2026-11-20)', async () => {
+  const { code, button, text } = opened({ codeCheck: async () => ({ ok: true, value: { offer: { ...OFFER, bound: true }, vip: null, replaces: false } }) });
+  code.value = 'BOUND123';
+  button('check').click();
+  await flush();
+  expect(text()).toContain('Bound to your character: these items can\'t be traded.');
+  const loose = opened();
+  loose.code.value = 'LOOSE123';
+  loose.button('check').click();
+  await flush();
+  expect(loose.text()).not.toContain('Bound to your character');
 });

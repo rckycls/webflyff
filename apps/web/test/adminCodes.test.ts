@@ -99,3 +99,14 @@ it('turns a code off and changes its label and end, logged; shows its uses', asy
   expect((await act('codes.uses', { id: made.body.id }, s)).body.rows).toMatchObject([{ account: 'tester1', characterName: 'Alpha', vipLevel: 2 }]);
   expect((await act('codes.save', { id: 999, label: 'x', expiresAt: ahead(s, 5), on: true }, s)).status).toBe(404);
 });
+
+it('makes a bound code (owner 2026-11-20: "Bound (can\'t trade)"), lists it bound, and logs the tick', async () => {
+  const s = setUp();
+  const made = await act('codes.add', everyone(s, { word: 'BOUNDGIFT', bound: true }), s);
+  expect(made.status).toBe(200);
+  expect((await act('codes.list', {}, s)).body.rows[0]).toMatchObject({ firstKey: 'BOUNDGIFT', bound: true });
+  expect(s.deps.store.log.at(-1)!.before).toContain('"bound":true');
+  expect((await act('codes.add', everyone(s, { word: 'LOOSEGIFT' }), s)).status).toBe(200);
+  expect((await act('codes.list', {}, s)).body.rows[0]).toMatchObject({ firstKey: 'LOOSEGIFT', bound: false });
+  expect(await act('codes.add', everyone(s, { word: 'BADTICK1', bound: 'yes' }), s)).toMatchObject({ status: 400, body: { field: 'bound' } });
+});

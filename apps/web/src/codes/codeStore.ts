@@ -10,8 +10,11 @@ export const CODE_KINDS: readonly CodeKind[] = ['E', 'L', 'K'];
 export interface CodeItem { itemId: number; count: number }
 export interface LiveVip { level: number; endsAt: string }
 
-/** What a code gives: `vipLevel` 0 for no VIP. */
-export interface CodeOffer { codeId: number; label: string; vipLevel: number; vipDays: number; expiresAt: string; items: CodeItem[] }
+/**
+ * What a code gives: `vipLevel` 0 for no VIP. `bound` (owner 2026-11-20, "Bound (can't trade)"): its items come with the
+ * game's binds flag, so they cannot be traded, dropped, mailed, sold in a private shop or put in the guild bank.
+ */
+export interface CodeOffer { codeId: number; label: string; vipLevel: number; vipDays: number; expiresAt: string; items: CodeItem[]; bound: boolean }
 
 /**
  * Why a key was refused: no such key, past its end time, turned off by the owner, an everyone code at its cap, a one-use
@@ -53,6 +56,8 @@ export interface NewCode {
   /** Kind L only. */
   accounts: string[];
   admin: string;
+  /** Its items bound to the character that redeems (false when missing). */
+  bound?: boolean;
 }
 
 export type AddCodeResult = { id: number } | { refused: 'key_taken' | 'unknown_account' | 'invalid'; detail: string };
@@ -74,6 +79,7 @@ export interface CodeRow {
   createdAt: string;
   createdBy: string;
   items: CodeItem[];
+  bound: boolean;
 }
 export interface CodeDetail extends CodeRow { accounts: string[] }
 export interface CodeKeyRow { key: string; usedBy: string | null; usedAt: string | null }
@@ -95,7 +101,7 @@ export interface CodeUseRow {
 }
 
 /** A use whose mails are not written yet. */
-export interface PendingUse { id: number; codeId: number; label: string; account: string; idPlayer: string; items: CodeItem[] }
+export interface PendingUse { id: number; codeId: number; label: string; account: string; idPlayer: string; items: CodeItem[]; bound: boolean }
 
 export interface CodeAdminStore {
   add(code: NewCode): Promise<AddCodeResult>;
