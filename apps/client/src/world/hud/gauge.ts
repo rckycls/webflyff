@@ -39,6 +39,7 @@ export class Gauge {
   private readonly pieces: HTMLElement[];
   private readonly slice: number;
   private width = -1;
+  private color: number | null = null;
 
   constructor(art: UiArt, private readonly picture: GaugePicture, color: number, name: string, doc: Document = document) {
     const { width, height } = PICTURES[picture];
@@ -47,12 +48,10 @@ export class Gauge {
     element.className = 'hud-gauge';
     element.dataset.gauge = name;
     element.style.height = `${height}px`;
-    element.style.opacity = String(((color >>> 24) & 0xff) / 255);
     const url = themeUrl(art, picture);
     this.pieces = [0, 1, 2].map(() => {
       const piece = doc.createElement('div');
       piece.style.height = `${height}px`;
-      piece.style.backgroundColor = cssRgb(color);
       piece.style.backgroundImage = url;
       piece.style.setProperty('background-blend-mode', 'multiply');
       piece.style.setProperty('-webkit-mask-image', url);
@@ -61,7 +60,16 @@ export class Gauge {
       return piece;
     });
     this.element = element;
+    this.setColor(color);
     this.set(0);
+  }
+
+  /** The gauge's colour (ARGB): the pieces' colour and the gauge's transparency. 2026-11-20: the boss bar shades. */
+  setColor(color: number): void {
+    if (color === this.color) return;
+    this.color = color;
+    this.element.style.opacity = String(((color >>> 24) & 0xff) / 255);
+    for (const piece of this.pieces) piece.style.backgroundColor = cssRgb(color);
   }
 
   /** The gauge's width in pixels, as the caller computed it; hidden when the theme would draw none. */

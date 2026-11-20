@@ -51,18 +51,26 @@ test('layered boss HP: xN through a hit, an exact bar, a multi-bar overflow, a r
     await page.waitForTimeout(300);
     await page.screenshot({ path: info.outputPath(`${name}.png`) });
   };
+  // 2026-11-20: the shades (fill, and the next bar behind it), as the first piece of each gauge draws them
+  const shade = (name: string) => page.locator(`.hud-target [data-gauge="${name}"]`);
+  const colours = async (): Promise<[string, string]> => [
+    await shade('target').evaluate((e) => getComputedStyle(e.firstElementChild!).backgroundColor),
+    (await shade('target-next').isVisible()) ? await shade('target-next').evaluate((e) => getComputedStyle(e.firstElementChild!).backgroundColor) : '',
+  ];
   const state = async (): Promise<[string, string]> => [(await hp.textContent()) ?? '', (await bars.isVisible()) ? (await bars.textContent()) ?? '' : ''];
 
   // a normal monster: no xN
   await tapMover(page, PLAIN_ID);
   await expect(target).toBeVisible(ON_FRAMES);
   await expect(bars).toBeHidden();
+  expect(await colours()).toEqual(['rgb(255, 15, 15)', '']);
 
   // the boss: five bars, the first full
   await tapMover(page, MONSTER_ID);
   await expect(bars).toHaveText('x5', ON_FRAMES);
   await expect(hp).toHaveText(`${BAR} / ${BAR}`);
   await phoneChecks(page);
+  expect(await colours()).toEqual(['rgb(255, 15, 15)', 'rgb(255, 75, 75)']);
   await shot('x5');
 
   // a hit under the bar: 50 off, still five bars
@@ -72,19 +80,25 @@ test('layered boss HP: xN through a hit, an exact bar, a multi-bar overflow, a r
   // the exact bar: 70 of 70, then a full fourth bar (no death)
   push([hit(MONSTER_ID, 70), writeSetPointParam(MONSTER_ID, DstParam.HP, BAR), writeHpLayer(MONSTER_ID, 4, 5, BAR, BAR)]);
   await expect.poll(state, ON_FRAMES).toEqual(['120 / 120', 'x4']);
+  await shot('x4');
 
   // a multi-bar overflow: 300 at 120 empties this bar and one more, and takes 60 of the next: x2, 60 / 120
   push([hit(MONSTER_ID, 300), writeSetPointParam(MONSTER_ID, DstParam.HP, 60), writeHpLayer(MONSTER_ID, 2, 5, BAR, 60)]);
   await expect.poll(state, ON_FRAMES).toEqual(['60 / 120', 'x2']);
+  expect(await colours()).toEqual(['rgb(255, 195, 195)', 'rgb(255, 255, 255)']);
   await shot('x2');
 
   // the leash reset: every bar back (CAIMonster::DoReturnToBegin: ResetHpLayers, SetPointParam( max ), FlushHpLayer)
   push([writeSetPointParam(MONSTER_ID, DstParam.HP, BAR), writeHpLayer(MONSTER_ID, 5, 5, BAR, BAR)]);
   await expect.poll(state, ON_FRAMES).toEqual(['120 / 120', 'x5']);
+  push([writeHpLayer(MONSTER_ID, 3, 5, BAR, 90)]);
+  await expect.poll(state, ON_FRAMES).toEqual(['90 / 120', 'x3']);
+  await shot('x3');
 
   // the last bar, then the kill: the death is the ordinary one (MOVERDEATH), and the own kill clears the target
   push([writeHpLayer(MONSTER_ID, 1, 5, BAR, 40)]);
   await expect.poll(state, ON_FRAMES).toEqual(['40 / 120', 'x1']);
+  expect(await colours()).toEqual(['rgb(255, 255, 255)', 'rgb(64, 64, 64)']);
   await shot('x1');
   push([hit(MONSTER_ID, 40), writeMoverDeath(MONSTER_ID, SELF_ID, OBJMSG_DAMAGE), writeSetPointParam(MONSTER_ID, DstParam.HP, 0)]);
   await expect(target).toBeHidden(ON_FRAMES);
