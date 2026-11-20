@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { validateCharacterName } from '@flyffweb/protocol';
 import type { Vec3 } from '@flyffweb/protocol';
+import type { NameWords } from './names';
 import { townNodes } from './townGraph';
 
 export type Group = 'rookie' | 'first' | 'veteran' | 'hero';
@@ -26,6 +27,8 @@ export interface BotSpec {
   home: string;
   group: Group;
   level: number; job: number; look: BotLook;
+  /** Renames itself within its first 30 minutes in the world (an old-style name), not only every 5-7 hours. */
+  renameSoon: boolean;
 }
 
 export interface Spot {
@@ -59,6 +62,8 @@ export interface ItemPlan {
   shopTitles: string[];
   /** The bots' gear: any of these in a bot's bag and not worn is put on as it enters (never a shop item). */
   gear: number[];
+  /** The Scroll of Name Change a bot renames itself with; no renames without it. */
+  renameScroll?: number;
 }
 
 /** A town and its fields: where its bots go, and about how many of them do what at a time. */
@@ -82,6 +87,8 @@ export interface TownBotsSettings {
   replies: string[];
   items: ItemPlan;
   setup: SetupPlan;
+  /** The words the bots' new names are made of; no renames without them. */
+  names?: NameWords;
 }
 
 const DEFAULT_PORT = 8095;
@@ -143,11 +150,13 @@ function bot(value: unknown, path: string): BotSpec {
   const pin = str(b.bankPin, `${path}.bankPin`);
   if (!/^\d{4}$/.test(pin)) fail(`${path}.bankPin`, 'must be 4 digits');
   const look = obj(b.look, `${path}.look`);
+  if (b.renameSoon !== undefined && typeof b.renameSoon !== 'boolean') fail(`${path}.renameSoon`, 'must be true or false');
   return {
     account: str(b.account, `${path}.account`).trim().toLowerCase(),
     password: str(b.password, `${path}.password`),
     bankPin: pin, name, home: str(b.home, `${path}.home`), group, level, job,
     look: { sex: int(look.sex, `${path}.look.sex`, 0, 1) as 0 | 1, hair: int(look.hair, `${path}.look.hair`, 0), face: int(look.face, `${path}.look.face`, 0) },
+    renameSoon: b.renameSoon === true,
   };
 }
 
@@ -222,13 +231,32 @@ function items(value: unknown, path: string): ItemPlan {
   gear.forEach((id, i) => {
     if (shop.some((s) => s.itemId === id) || spares.includes(id)) fail(`${path}.gear[${i}]`, 'is also a shop item or an upgrade spare');
   });
+  const renameScroll = it.renameScroll === undefined ? undefined : int(it.renameScroll, `${path}.renameScroll`, 1);
+  if (renameScroll !== undefined && gear.includes(renameScroll)) fail(`${path}.renameScroll`, 'is also a gear item');
   return {
     potions: ints(it.potions, `${path}.potions`),
     upgrade: { materials: ints(upgrade.materials, `${path}.upgrade.materials`), spares },
     shop,
     shopTitles: arr(it.shopTitles, `${path}.shopTitles`).map((v, i) => str(v, `${path}.shopTitles[${i}]`)),
     gear,
+    ...(renameScroll === undefined ? {} : { renameScroll }),
   };
+}
+
+/** A word of a name: letters only, 2 to 12. */
+function words(value: unknown, path: string): string[] {
+  const list = arr(value, path).map((v, i) => {
+    const word = str(v, `${path}[${i}]`);
+    if (!/^[A-Za-z]{2,12}$/.test(word)) fail(`${path}[${i}]`, 'must be 2 to 12 letters');
+    return word;
+  });
+  if (list.length === 0) fail(path, 'must hold at least one word');
+  return list;
+}
+
+function names(value: unknown, path: string): NameWords {
+  const n = obj(value, path);
+  return { adjectives: words(n.adjectives, `${path}.adjectives`), nouns: words(n.nouns, `${path}.nouns`), titles: words(n.titles, `${path}.titles`) };
 }
 
 function setup(value: unknown, path: string): SetupPlan {
@@ -275,6 +303,7 @@ export function parseSettings(json: unknown): TownBotsSettings {
     regions, bots, replies,
     items: items(root.items, 'items'),
     setup: setup(root.setup, 'setup'),
+    ...(root.names === undefined ? {} : { names: names(root.names, 'names') }),
   };
 }
 
@@ -286,11 +315,11 @@ function readPart(value: unknown, base: string): unknown {
   return JSON.parse(text) as unknown;
 }
 
-/** Reads and checks the settings file; `items`, `replies`, `setup` and each region's `places` may be file names beside it. */
+/** Reads and checks the settings file; `items`, `replies`, `setup`, `names` and each region's `places` may be file names beside it. */
 export function loadSettings(path: string): TownBotsSettings {
   const root = obj(JSON.parse(readFileSync(path, 'utf8')) as unknown, 'settings');
   const base = dirname(path);
-  for (const key of ['items', 'replies', 'setup'] as const) root[key] = readPart(root[key], base);
+  for (const key of ['items', 'replies', 'setup', 'names'] as const) root[key] = readPart(root[key], base);
   if (typeof root.regions === 'object' && root.regions !== null) {
     for (const region of Object.values(root.regions as Json)) {
       if (typeof region === 'object' && region !== null) (region as Json).places = readPart((region as Json).places, base);

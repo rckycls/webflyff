@@ -110,6 +110,56 @@ describe('loadSettings', () => {
   });
 });
 
+describe('names and renames', () => {
+  const WORDS = { adjectives: ['Dark', 'mad'], nouns: ['Wolf', 'Blade'], titles: ['Lord'] };
+
+  it('are optional: no word lists, no rename scroll, no early rename', () => {
+    const s = parseSettings(valid());
+    expect(s.names).toBeUndefined();
+    expect(s.items.renameScroll).toBeUndefined();
+    expect(s.bots[0]!.renameSoon).toBe(false);
+  });
+
+  it('takes word lists, a rename scroll and bots that rename soon', () => {
+    const v = valid();
+    v.names = WORDS;
+    v.items.renameScroll = 5000;
+    v.bots[0].renameSoon = true;
+    const s = parseSettings(v);
+    expect(s.names!.nouns).toEqual(['Wolf', 'Blade']);
+    expect(s.items.renameScroll).toBe(5000);
+    expect(s.bots[0]!.renameSoon).toBe(true);
+  });
+
+  const broken: Array<[string, (v: Record<string, any>) => void, RegExp]> = [
+    ['a word with a digit', (v) => { v.names = { ...WORDS, nouns: ['Wolf9'] }; }, /names\.nouns\[0\]/],
+    ['a word with a space', (v) => { v.names = { ...WORDS, titles: ['Sir Lord'] }; }, /names\.titles\[0\]/],
+    ['no nouns', (v) => { v.names = { ...WORDS, nouns: [] }; }, /names\.nouns/],
+    ['a rename scroll that is gear', (v) => { v.items.renameScroll = 6000; v.items.gear = [6000]; }, /items\.renameScroll/],
+    ['renameSoon that is not true or false', (v) => { v.bots[0].renameSoon = 'yes'; }, /bots\[0\]\.renameSoon/],
+  ];
+  for (const [what, breakIt, path] of broken) {
+    it(`refuses ${what}, naming the place`, () => {
+      const v = valid();
+      breakIt(v);
+      expect(() => parseSettings(v)).toThrow(path);
+    });
+  }
+
+  it('reads the word lists from a file beside it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bots-'));
+    try {
+      const v = valid();
+      writeFileSync(join(dir, 'words.json'), JSON.stringify(WORDS));
+      v.names = 'words.json';
+      writeFileSync(join(dir, 'bots.json'), JSON.stringify(v));
+      expect(loadSettings(join(dir, 'bots.json')).names!.titles).toEqual(['Lord']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the stock file', () => {
   it('is optional, and a path when given', () => {
     const v = valid();

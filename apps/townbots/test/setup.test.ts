@@ -6,7 +6,7 @@ const TITLES = ['Vagrant', 'Mercenary', 'Acrobat', 'Assist', 'Magician', 'Puppet
 const title = (job: number): string => TITLES[job] ?? '';
 
 function bot(group: BotSpec['group'], job: number, level: number): BotSpec {
-  return { account: 'testbot01', password: 'pw', bankPin: '1234', name: 'Abcd', home: 'a', group, job, level, look: { sex: 0, hair: 0, face: 0 } };
+  return { account: 'testbot01', password: 'pw', bankPin: '1234', name: 'Abcd', home: 'a', group, job, level, look: { sex: 0, hair: 0, face: 0 }, renameSoon: false };
 }
 
 describe('setupCommands', () => {
