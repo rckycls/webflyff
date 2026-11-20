@@ -475,6 +475,9 @@ export class WorldState {
       case 'pocketAttribute':
       case 'pocketAddItem':
       case 'pocketRemoveItem':
+      // custom (owner 2026-11-19, VIP perks): the bag's new order after the VIP sort (2026-11-20: it was read but
+      // never passed on, so the Sort button seemed to do nothing until a relog)
+      case 'vipInventorySort':
         this.toOwn(message, objectId);
         return;
       case 'equipItem': {
