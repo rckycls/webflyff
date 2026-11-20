@@ -3163,6 +3163,8 @@ export class WorldScreen {
     };
     this.cameraControls.flying = () => this.world?.self()?.act.isFlying() === true;
     this.cameraControls.zoomBlocked = () => this.placement?.active === true;
+    // 2026-11-20 (phone-camera-invert): the phone Option window's "Invert Camera", read at each finger move
+    this.cameraControls.touchInvert = () => ({ up: this.gameOptions.invertCameraUp, turn: this.gameOptions.invertCameraTurn });
     // 2026-11-15 (housing): the furniture core's placing and its input (a finger's touches are its own while it runs)
     const services = this.services!;
     const placement = new FurniturePlacement({

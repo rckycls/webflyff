@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CameraControls } from '../src/world/cameraControls';
+import { forwardOf } from '@flyffweb/scene';
+import { BackCamera } from '../src/world/backCamera';
+import { CameraControls, TOUCH_DOWN_SIGN } from '../src/world/cameraControls';
+import type { TouchInvert } from '../src/world/cameraControls';
 
 function pointer(target: EventTarget, type: string, id: number, x: number, y: number, button = 0, pointerType = 'touch') {
   target.dispatchEvent(Object.assign(new Event(type), { pointerId: id, clientX: x, clientY: y, button, pointerType }));
@@ -12,8 +15,87 @@ describe('camera gestures', () => {
     const controls = new CameraControls(canvas as HTMLElement, (x, y) => turns.push([x, y]));
     pointer(canvas, 'pointerdown', 1, 0, 0);
     pointer(canvas, 'pointermove', 1, 20, 20);
-    expect(turns).toEqual([[30, 7]]);
+    // 2026-11-20 (phone-camera-invert): a drag down is a negative dy for `rotate` (it lifts the camera)
+    expect(turns).toEqual([[30, -7]]);
     controls.dispose();
+  });
+
+  describe('2026-11-20 (phone-camera-invert): the finger drag turns the view as the phone games do', () => {
+    /** A finger dragged by (dx, dy) on a fresh BackCamera through CameraControls, as WorldScreen wires them. */
+    function drag(dx: number, dy: number, invert: TouchInvert | null = null): { camera: BackCamera; heading0: number; rotY0: number } {
+      const canvas = new EventTarget();
+      const camera = new BackCamera();
+      camera.heading = 0;
+      const rotY0 = camera.rotY;
+      const controls = new CameraControls(canvas as HTMLElement, (x, y) => camera.rotate(x, y));
+      if (invert !== null) controls.touchInvert = () => invert;
+      pointer(canvas, 'pointerdown', 1, 100, 100);
+      pointer(canvas, 'pointermove', 1, 100 + dx, 100 + dy);
+      controls.dispose();
+      return { camera, heading0: 0, rotY0 };
+    }
+    /** How far the view's new forward leans to its old right: positive, the view turned right. */
+    function turnedRight(heading0: number, heading: number): number {
+      const [fx, fz] = forwardOf(heading0);
+      const [nx, nz] = forwardOf(heading);
+      // the screen's right of a camera looking along (fx, fz) with y up is (-fz, fx)
+      return nx * -fz + nz * fx;
+    }
+
+    it('a finger dragged up tilts the view up (the camera lower); dragged down, down (the camera higher)', () => {
+      expect(TOUCH_DOWN_SIGN).toBe(-1);
+      const up = drag(0, -40);
+      expect(up.camera.rotY).toBeLessThan(up.rotY0);
+      const down = drag(0, 40);
+      expect(down.camera.rotY).toBeGreaterThan(down.rotY0);
+    });
+
+    it('a finger dragged right turns the view right, as before', () => {
+      const right = drag(40, 0);
+      expect(turnedRight(right.heading0, right.camera.heading!)).toBeGreaterThan(0);
+      const left = drag(-40, 0);
+      expect(turnedRight(left.heading0, left.camera.heading!)).toBeLessThan(0);
+    });
+
+    it('"Invert Camera" turns either axis round, and only that axis', () => {
+      const upInverted = drag(0, -40, { up: true, turn: false });
+      expect(upInverted.camera.rotY).toBeGreaterThan(upInverted.rotY0);
+      const rightUpInverted = drag(40, 0, { up: true, turn: false });
+      expect(turnedRight(0, rightUpInverted.camera.heading!)).toBeGreaterThan(0);
+      const turnInverted = drag(40, 0, { up: false, turn: true });
+      expect(turnedRight(0, turnInverted.camera.heading!)).toBeLessThan(0);
+      const upTurnInverted = drag(0, -40, { up: false, turn: true });
+      expect(upTurnInverted.camera.rotY).toBeLessThan(upTurnInverted.rotY0);
+      const both = drag(40, -40, { up: true, turn: true });
+      expect(turnedRight(0, both.camera.heading!)).toBeLessThan(0);
+      expect(both.camera.rotY).toBeGreaterThan(both.rotY0);
+    });
+
+    it('the inverts are read at each move, so a change in the Option window applies to the next drag at once', () => {
+      const canvas = new EventTarget();
+      const turns: number[][] = [];
+      const invert: TouchInvert = { up: false, turn: false };
+      const controls = new CameraControls(canvas as HTMLElement, (x, y) => turns.push([x, y]));
+      controls.touchInvert = () => invert;
+      pointer(canvas, 'pointerdown', 1, 0, 0);
+      pointer(canvas, 'pointermove', 1, 20, 20);
+      invert.up = true;
+      invert.turn = true;
+      pointer(canvas, 'pointermove', 1, 40, 40);
+      expect(turns).toEqual([[30, -7], [-30, 7]]);
+      controls.dispose();
+    });
+
+    it('the mouse drag and the arrows do not read them (desktop unchanged)', () => {
+      const canvas = new EventTarget();
+      const turns: number[][] = [];
+      const controls = new CameraControls(canvas as HTMLElement, (x, y) => turns.push([x, y]));
+      controls.touchInvert = () => ({ up: true, turn: true });
+      pointer(canvas, 'pointerdown', 1, 10, 10, 2, 'mouse');
+      pointer(canvas, 'pointermove', 1, 30, 15, 2, 'mouse');
+      expect(turns).toEqual([[20, 5]]);
+      controls.dispose();
+    });
   });
   it('in flight a right mouse drag steers instead of turning the camera (Piece 7 M5)', () => {
     const canvas = new EventTarget();

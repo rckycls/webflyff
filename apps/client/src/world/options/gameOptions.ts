@@ -17,6 +17,10 @@
 //                                                            (WndWorld.cpp:8011-8015); the Video page's, not shown yet
 //   m_bZoomLimit    :261, "ZOOMLIMIT"                        2026-11-20: on, the wheel zooms out to 7, else 15
 //                                                            (WndWorld.cpp:7389-7399); the Video page's, not shown yet
+//   invertCameraUp  (not Neuz's)                             2026-11-20 (phone-camera-invert): the phone's finger drag
+//   invertCameraTurn                                         tilts the camera the other way up and down / turns it the
+//                                                            other way round (the phone Option window's "Invert
+//                                                            Camera"; docs/2026-11-20-phone-camera-invert.md)
 //
 // Neuz writes them to neuz.ini when it closes (HwOption.cpp:1069-1126); the browser keeps them in its storage at once, one
 // set for every character, as neuz.ini is one per client.
@@ -33,11 +37,16 @@ export interface GameOptions {
   cameraLock: boolean;
   /** 2026-11-20 (mouse-drag): `m_bZoomLimit`. */
   zoomLimit: boolean;
+  /** 2026-11-20 (phone-camera-invert): a finger dragged up tilts the camera down (as before 2026-11-20), not up. */
+  invertCameraUp: boolean;
+  /** 2026-11-20 (phone-camera-invert): a finger dragged right turns the camera left, not right. */
+  invertCameraTurn: boolean;
 }
 
-/** `CHwOption::Init`'s values (HwOption.cpp:173-261). */
+/** `CHwOption::Init`'s values (HwOption.cpp:173-261), and the two camera inverts off. */
 export const DEFAULT_GAME_OPTIONS: Readonly<GameOptions> = {
   trade: true, party: true, autoAttack: true, translucent: false, battleMusic: false, cameraLock: true, zoomLimit: true,
+  invertCameraUp: false, invertCameraTurn: false,
 };
 
 /** The alpha of the windows' pictures with Translucency (`CWndBase::m_nAlpha = g_Option.m_nWindowAlpha = 128`). */

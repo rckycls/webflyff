@@ -13,7 +13,9 @@
 //   PageUp/PageDown   the zoom, 0.6 a frame
 //   arrows            4 degrees a frame round, 2 up and down
 //
-// A phone keeps its own drag (0.005 rad a pixel, ×1.5 round and ×0.35 up and down, past 8 px).
+// A phone keeps its own drag (0.005 rad a pixel, ×1.5 round and ×0.35 up and down, past 8 px). 2026-11-20
+// (phone-camera-invert, docs/2026-11-20-phone-camera-invert.md): it turns the view as the phone games' finger drag does
+// (`TOUCH_DOWN_SIGN`), and the Option window's "Invert Camera" turns either way round (`touchInvert`).
 
 /** What the camera's input turns, in V15's units (`BackCamera`, with the own mover's angle bound in for `behind`). */
 export interface CameraView {
@@ -36,6 +38,23 @@ export const MOUSE_DEGREES_PER_PIXEL = 0.2;
  * M1 (`docs/piece5-m1-checkpoint.md`). V15 is the other way (`m_fRoty += dy`, :7586: a drag down lifts the camera): 1.
  */
 export const DRAG_UP_SIGN = -1;
+/** The phone's finger drag: `rotate`'s pixels for each pixel round, and up and down. */
+const TOUCH_TURN = 1.5;
+const TOUCH_UP = .35;
+/**
+ * 2026-11-20 (phone-camera-invert): which way a finger dragged down moves the camera, in `rotate`'s pixels (where a
+ * positive dy lowers the camera): -1, a drag down lifts the camera, so the view tilts down, and a drag up tilts it up,
+ * as the phone games' finger drag does (PUBG Mobile, Call of Duty Mobile, Roblox: the finger turns the view as a mouse
+ * turns a mouse-look camera). From Piece 5 M1 to now it was 1 (a drag down lowered the camera), which players called
+ * inverted. Left and right already matched the games (a drag right turns the view right) and stay.
+ */
+export const TOUCH_DOWN_SIGN = -1;
+
+/** 2026-11-20 (phone-camera-invert): the Option window's "Invert Camera": either axis of the finger drag turned round. */
+export interface TouchInvert {
+  up: boolean;
+  turn: boolean;
+}
 /** The arrows a frame: 4 degrees round (:8698, :8716), 2 up and down (:8733, :8749). */
 const ARROW_YAW = 4;
 const ARROW_UP = 2;
@@ -79,6 +98,8 @@ export class CameraControls {
   flying: (() => boolean) | null = null;
   /** 2026-11-20: while true the wheel and PageUp / PageDown do not zoom (a piece of furniture being placed, :7348). */
   zoomBlocked: (() => boolean) | null = null;
+  /** 2026-11-20 (phone-camera-invert): the finger drag's inverts, read at each move (the options, kept per browser). */
+  touchInvert: (() => TouchInvert) | null = null;
 
   constructor(
     private readonly canvas: HTMLElement,
@@ -288,7 +309,11 @@ export class CameraControls {
     press.x = event.clientX;
     press.y = event.clientY;
     event.preventDefault();
-    this.rotate(dx * 1.5, dy * .35);
+    const invert = this.touchInvert?.();
+    const turn = invert?.turn === true ? -1 : 1;
+    const up = invert?.up === true ? -1 : 1;
+    // (+ 0: no -0 for a move along one axis)
+    this.rotate(turn * dx * TOUCH_TURN + 0, up * TOUCH_DOWN_SIGN * dy * TOUCH_UP + 0);
   }
 
   /** How far apart the first two touches are. */

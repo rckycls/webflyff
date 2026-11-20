@@ -27,7 +27,10 @@
 // takes the arrow keys (Piece 6 M2's ruling 2). Each change applies at once.
 //
 // The phone (the compact V15 panels, docs/2026-11-14-phone-panels.md): the same controls, the groups in four columns, the
-// window at its content's size.
+// window at its content's size. 2026-11-20 (phone-camera-invert, docs/2026-11-20-phone-camera-invert.md): on the phone
+// only, one more group, "Invert Camera" (not Neuz's), its two checks side by side as a pair of radios: "Up/Down" and
+// "Left/Right" turn the finger drag's camera the other way (options/gameOptions.ts `invertCameraUp`, `invertCameraTurn`).
+// The desktop page stays as Neuz has it: the mouse's drag does not read them.
 
 import type { GameAudio } from '../../audio/gameAudio';
 import type { FriendOptions } from '../friends/messenger';
@@ -68,7 +71,9 @@ type Rect = readonly [left: number, top: number, right: number, bottom: number];
 
 /** A pair of radios (one option), the first one "on". */
 export type PairId = 'trade' | 'say' | 'messenger' | 'duel' | 'party' | 'autoAttack' | 'equip' | 'join';
-type CheckId = 'instantHelp' | 'guide' | 'translucent' | 'battleMusic';
+type CheckId = 'instantHelp' | 'guide' | 'translucent' | 'battleMusic' | CameraCheck;
+/** 2026-11-20 (phone-camera-invert): the phone's "Invert Camera" checks, named as the options they set. */
+type CameraCheck = 'invertCameraUp' | 'invertCameraTurn';
 
 interface PairSpec {
   id: PairId;
@@ -136,6 +141,13 @@ const CHECKS: ReadonlyArray<{ id: CheckId; label: string; rect: Rect; tip?: stri
   { id: 'battleMusic', label: 'Battle Music', rect: [240, 288, 470, 304] },
 ];
 
+/** 2026-11-20 (phone-camera-invert): the phone's "Invert Camera" group, its checks in the order they stand. */
+const CAMERA_TITLE = 'Invert Camera';
+const CAMERA_CHECKS: ReadonlyArray<{ id: CameraCheck; label: string; tip: string }> = [
+  { id: 'invertCameraUp', label: 'Up/Down', tip: 'A finger dragged up tilts the camera down.' },
+  { id: 'invertCameraTurn', label: 'Left/Right', tip: 'A finger dragged right turns the camera left.' },
+];
+
 const BARS: Readonly<Record<Volume, readonly [number, number]>> = { music: [348, 244], effects: [348, 266] };
 
 /** The phone's columns: four of groups, each group a heading and then its radios side by side, its checks a row each. */
@@ -185,8 +197,10 @@ function phonePlacement(at: { x: number; y: number }): Placement {
   const radios = new Map<PairId, [ControlRect, ControlRect]>();
   const checks = new Map<CheckId, ControlRect>();
   const bars = new Map<Volume, ControlRect>();
-  const columns: Array<Array<PairId | 'help' | 'effects' | 'sound'>> = [
-    ['trade', 'say', 'messenger'], ['duel', 'party', 'autoAttack'], ['equip', 'join', 'effects'], ['help', 'sound'],
+  // 2026-11-20 (phone-camera-invert): "Invert Camera" under Automatic Attack, where the second column had room (it ends
+  // above the fourth's bottom, so the window keeps its height)
+  const columns: Array<Array<PairId | 'help' | 'effects' | 'sound' | 'camera'>> = [
+    ['trade', 'say', 'messenger'], ['duel', 'party', 'autoAttack', 'camera'], ['equip', 'join', 'effects'], ['help', 'sound'],
   ];
   let height = 0;
   columns.forEach((groups, column) => {
@@ -210,6 +224,12 @@ function phonePlacement(at: { x: number; y: number }): Placement {
           y += PHONE_ROW;
         }
         checks.set('battleMusic', row());
+        y += PHONE_ROW;
+      } else if (group === 'camera') {
+        // the two checks side by side, as a pair of radios stands
+        const half = PHONE_COLUMN / 2;
+        checks.set('invertCameraUp', row(half - 2));
+        checks.set('invertCameraTurn', row(half - 2, half));
         y += PHONE_ROW;
       } else {
         const half = PHONE_COLUMN / 2;
@@ -289,7 +309,9 @@ export class OptionWindow {
     page.setAttribute('aria-label', TAB_TITLES[1]);
     body.append(tiles, page);
 
-    const titles = new Map<string, string>([...PAIRS.map((p) => [p.id, p.title] as const), ...STATICS.map((s) => [s.id, s.title] as const)]);
+    const titles = new Map<string, string>([
+      ...PAIRS.map((p) => [p.id, p.title] as const), ...STATICS.map((s) => [s.id, s.title] as const), ['camera', CAMERA_TITLE],
+    ]);
     for (const [id, rect] of at.statics) page.append(this.static(titles.get(id) ?? '', rect, id));
     for (const pair of PAIRS) {
       const rects = at.radios.get(pair.id)!;
@@ -304,9 +326,16 @@ export class OptionWindow {
       };
       this.pairs.set(pair.id, [make(0), make(1)]);
     }
-    for (const check of CHECKS) {
-      const box = sixFrameButton(doc, art, 'ButtCheck.bmp', 14, at.checks.get(check.id)!,
-        { role: 'checkbox', name: check.label, label: check.label, ...(check.tip !== undefined ? { tooltip: check.tip } : {}) },
+    for (const check of [...CHECKS, ...CAMERA_CHECKS]) {
+      // the camera's checks only where the placement has them (the phone)
+      const rect = at.checks.get(check.id);
+      if (rect === undefined) continue;
+      const camera = CAMERA_CHECKS.some((c) => c.id === check.id);
+      const box = sixFrameButton(doc, art, 'ButtCheck.bmp', 14, rect,
+        {
+          role: 'checkbox', name: camera ? `${CAMERA_TITLE}: ${check.label}` : check.label, label: check.label,
+          ...(check.tip !== undefined ? { tooltip: check.tip } : {}),
+        },
         () => this.toggleCheck(check.id));
       box.element.dataset.option = check.id;
       // the instant help and the guide are not the browser's: shown as Neuz has them, greyed
@@ -383,6 +412,10 @@ export class OptionWindow {
     for (const [id, on] of Object.entries(states) as Array<[PairId, boolean]>) this.showPair(id, on);
     this.checks.get('translucent')!.checked = game.translucent;
     this.checks.get('battleMusic')!.checked = game.battleMusic;
+    for (const { id } of CAMERA_CHECKS) {
+      const box = this.checks.get(id);
+      if (box !== undefined) box.checked = game[id];
+    }
     if (this.host.audio !== null) {
       const { music, effects } = this.host.audio.settings;
       this.show('music', music);
@@ -425,8 +458,8 @@ export class OptionWindow {
     if (id === 'translucent') {
       this.host.game.translucent = on;
       this.host.translucent(on);
-    } else if (id === 'battleMusic') {
-      this.host.game.battleMusic = on;
+    } else if (id === 'battleMusic' || id === 'invertCameraUp' || id === 'invertCameraTurn') {
+      this.host.game[id] = on;
     }
     this.host.saveGame();
   }

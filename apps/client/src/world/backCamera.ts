@@ -123,7 +123,10 @@ export class BackCamera {
     if (this.room) this.keepRoom();
   }
 
-  /** A touch drag, in pixels (the phone's own: 0.005 rad a pixel; a drag down lowers the camera). */
+  /**
+   * A touch drag, in pixels (the phone's own: 0.005 rad a pixel; a positive dy lowers the camera). 2026-11-20
+   * (phone-camera-invert): the finger's own direction is `cameraControls.ts`'s `TOUCH_DOWN_SIGN`, which flips dy first.
+   */
   rotate(dx: number, dy: number): void {
     this.turn(dx * 0.005 * DEGREES_PER_RADIAN, -dy * 0.005 * DEGREES_PER_RADIAN);
   }

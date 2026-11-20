@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OptionWindow } from '../src/world/hud/optionWindow';
 import type { OptionHost } from '../src/world/hud/optionWindow';
 import { DEFAULT_GAME_OPTIONS } from '../src/world/options/gameOptions';
@@ -109,6 +109,65 @@ describe('OptionWindow: Neuz\'s Option window, its Game / Audio page (APP_OPTEX_
     expect(check('translucent').getAttribute('aria-checked')).toBe('true');
     expect(check('instantHelp').disabled).toBe(true);
     expect(check('guide').disabled).toBe(true);
+  });
+
+  it('2026-11-20 (phone-camera-invert): the desktop page has no "Invert Camera" (the mouse does not read it)', () => {
+    const { w, check } = make();
+    expect(w.frame.element.textContent).not.toContain('Invert Camera');
+    expect(check('invertCameraUp')).toBeNull();
+    expect(check('invertCameraTurn')).toBeNull();
+  });
+
+  it('2026-11-20 (phone-camera-invert): the phone has "Invert Camera", Up/Down and Left/Right side by side, kept with the options', () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    try {
+      const { w, host, calls, check } = make();
+      expect(w.frame.element.hasAttribute('data-phone')).toBe(true);
+      const heading = w.frame.element.querySelector<HTMLElement>('[data-static="camera"]')!;
+      expect(heading.textContent).toBe('Invert Camera');
+      const up = check('invertCameraUp');
+      const turn = check('invertCameraTurn');
+      expect(up.getAttribute('aria-label')).toBe('Invert Camera: Up/Down');
+      expect(turn.getAttribute('aria-label')).toBe('Invert Camera: Left/Right');
+      expect([up.getAttribute('aria-checked'), turn.getAttribute('aria-checked')]).toEqual(['false', 'false']);
+      // under its heading, the two in one row, as a pair of radios stands
+      const top = (element: HTMLElement) => parseFloat(element.style.top);
+      const left = (element: HTMLElement) => parseFloat(element.style.left);
+      expect(top(up)).toBeGreaterThan(top(heading));
+      expect(top(turn)).toBe(top(up));
+      expect(left(turn)).toBeGreaterThan(left(up));
+      // the second column: under Automatic Attack, at its left
+      const autoAttack = w.frame.element.querySelector<HTMLElement>('[data-static="autoAttack"]')!;
+      expect(left(heading)).toBe(left(autoAttack));
+      expect(top(heading)).toBeGreaterThan(top(autoAttack));
+      up.click();
+      expect(host.game.invertCameraUp).toBe(true);
+      expect(host.game.invertCameraTurn).toBe(false);
+      expect(up.getAttribute('aria-checked')).toBe('true');
+      turn.click();
+      turn.click();
+      expect(host.game.invertCameraTurn).toBe(false);
+      expect(calls).toEqual(['saveGame', 'saveGame', 'saveGame']);
+      // shown as kept the next time it opens
+      w.toggle();
+      host.game.invertCameraTurn = true;
+      w.toggle();
+      expect([up.getAttribute('aria-checked'), turn.getAttribute('aria-checked')]).toEqual(['true', 'true']);
+    } finally { window.matchMedia = original; }
+  });
+
+  it('2026-11-20 (phone-camera-invert): the new group keeps the phone window at its height (the fourth column is taller)', () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    try {
+      const { w } = make();
+      const bottomOf = (selector: string) => {
+        const element = w.frame.element.querySelector<HTMLElement>(selector)!;
+        return parseFloat(element.style.top) + parseFloat(element.style.height);
+      };
+      expect(bottomOf('.hud-six-frame[data-option="invertCameraUp"]')).toBeLessThan(bottomOf('.hud-six-frame[data-option="battleMusic"]'));
+    } finally { window.matchMedia = original; }
   });
 
   it('the sliders at the saved steps, at their rects', () => {
