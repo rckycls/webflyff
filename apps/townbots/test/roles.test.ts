@@ -13,15 +13,15 @@ function seeded(seed: number): () => number {
   };
 }
 
-/** 14 rookies, 9 first jobs, 7 veterans, as the roster has them. */
+/** 14 rookies, 9 first jobs, 5 veterans, 2 heroes. */
 function roster(): Array<[string, Group]> {
   const bots: Array<[string, Group]> = [];
-  for (let i = 0; i < 30; i++) bots.push([`b${i}`, i < 14 ? 'rookie' : i < 23 ? 'first' : 'veteran']);
+  for (let i = 0; i < 30; i++) bots.push([`b${i}`, i < 14 ? 'rookie' : i < 23 ? 'first' : i < 28 ? 'veteran' : 'hero']);
   return bots;
 }
 
 describe('RolePlanner', () => {
-  it('fills the roles close to their targets and never sends a veteran farming', () => {
+  it('fills the roles close to their targets and never sends a hero farming', () => {
     let now = 0;
     const planner = new RolePlanner(TARGETS, seeded(3), () => now);
     const given = new Map<string, string>();
@@ -30,7 +30,7 @@ describe('RolePlanner', () => {
     for (const role of Object.keys(TARGETS) as Array<keyof typeof TARGETS>) {
       expect(Math.abs(counts[role] - TARGETS[role])).toBeLessThanOrEqual(1);
     }
-    for (const [bot, group] of roster()) if (group === 'veteran') expect(given.get(bot)).not.toBe('farming');
+    for (const [bot, group] of roster()) if (group === 'hero') expect(given.get(bot)).not.toBe('farming');
   });
 
   it('says a role is due once its time is up, between 20 and 60 minutes for farming', () => {
@@ -92,8 +92,39 @@ describe('RolePlanner', () => {
   });
 
   it('with every role full, gives the eligible role least over its target', () => {
-    const planner = new RolePlanner({ farming: 1, wandering: 0, upgrading: 0, shop: 0, afk: 0 }, () => 0, () => 0);
+    const planner = new RolePlanner({ farming: 1, wandering: 1, upgrading: 0, shop: 0, afk: 1 }, () => 0, () => 0);
     planner.assign('b0', 'rookie');
-    expect(planner.assign('b1', 'veteran')).not.toBe('farming');
+    planner.assign('b1', 'hero');
+    planner.assign('b2', 'hero');
+    expect(planner.counts()).toMatchObject({ farming: 1, wandering: 1, afk: 1 });
+    expect(planner.assign('b3', 'hero')).not.toBe('farming');
+  });
+
+  it('a role with target 0 is never given', () => {
+    let now = 0;
+    const planner = new RolePlanner({ farming: 0, wandering: 2, upgrading: 1, shop: 0, afk: 2 }, seeded(7), () => now);
+    for (let i = 0; i < 20; i++) {
+      expect(['farming', 'shop']).not.toContain(planner.assign(`b${i}`, 'rookie'));
+      now += MIN;
+      expect(['farming', 'shop']).not.toContain(planner.switchRole(`b${i}`, 'rookie'));
+    }
+  });
+
+  it('a veteran may farm', () => {
+    const planner = new RolePlanner({ farming: 1, wandering: 1, upgrading: 0, shop: 0, afk: 0 }, () => 0, () => 0);
+    expect(planner.assign('b0', 'veteran')).toBe('farming');
+  });
+
+  it('a hero never farms', () => {
+    const planner = new RolePlanner({ farming: 3, wandering: 1, upgrading: 0, shop: 0, afk: 0 }, seeded(5), () => 0);
+    for (let i = 0; i < 10; i++) {
+      expect(planner.assign('h', 'hero')).not.toBe('farming');
+      expect(planner.switchRole('h', 'hero')).not.toBe('farming');
+    }
+  });
+
+  it('a bot with nothing it may do still wanders', () => {
+    const planner = new RolePlanner({ farming: 1, wandering: 0, upgrading: 0, shop: 0, afk: 0 }, () => 0, () => 0);
+    expect(planner.assign('h', 'hero')).toBe('wandering');
   });
 });
