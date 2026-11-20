@@ -112,6 +112,26 @@ export function nextChangeLevel(job: number): number | null {
 }
 
 /**
+ * Whether the window pops up by itself (the owner: "pop up ... after reaching the required level", and again at each
+ * login while a change is due): a tier due `now` that was not due `before`, or any due tier at the `login`; never after
+ * the player `dismissed` it this session (until the tier changes), nor with the test switch `off`.
+ */
+export function shouldPopUp(before: JobTier | null, now: JobTier | null, login: boolean, dismissed: boolean, off: boolean): boolean {
+  return !off && now !== null && (login || before !== now) && !dismissed;
+}
+
+/** The e2e harness's switch: `flyffweb.jobPopup` = 'off' keeps the pop-up shut (a storage that throws reads as on). */
+export const JOB_POPUP_KEY = 'flyffweb.jobPopup';
+
+export function jobPopupOff(storage: Pick<Storage, 'getItem'> | undefined): boolean {
+  try {
+    return storage?.getItem(JOB_POPUP_KEY) === 'off';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The window's four slots for `job` in `tier`: the targets first, then filler locks. In the first and second tiers a
  * target is open unless another target's chain has begun and its own has not (`started` names a quest that is current or
  * completed).

@@ -26,6 +26,7 @@ import {
 } from '@flyffweb/protocol';
 import { encodeCraftCard } from '@flyffweb/protocol'; // custom (owner 2026-11-19): Bozman's Craft Card
 import { encodeTeleportWindow } from '@flyffweb/protocol'; // custom (owner 2026-11-19): the Teleport window
+import { encodeQuickJobChange } from '@flyffweb/protocol'; // custom (owner 2026-11-20): the Quick Job Change window
 import type { NpcWindowPacket } from './items/npcWindowKit';
 import {
   encodeAddPartyMember, encodeBlock, encodeChangeTroup, encodePartyChangeLeader, encodePartyExpMode, encodePartyItemMode,
@@ -207,6 +208,8 @@ export class WorldSession {
   sendHeavenTowerTeleport(floor: number): void { this.playingCache()?.send(encodeHeavenTowerTeleport(floor)); }
   /** custom (owner 2026-11-19): the Teleport window's place number (a patched World server; others ignore it). */
   sendTeleportWindow(place: number): void { this.playingCache()?.send(encodeTeleportWindow(place)); }
+  /** custom (owner 2026-11-20): the Quick Job Change window's Yes (QUICK_JOB_CHANGE 0x8fff0130), the job picked. */
+  sendQuickJobChange(job: number): void { this.playingCache()?.send(encodeQuickJobChange(job)); }
   /**
    * 2026-11-14 (the Motion window, world/motion.ts): sit down or stand up (`SendMotion`, an OBJMSG), cheer a player
    * (`SendCheering`), the town escape (`SendDoEscape`) and a proposal (`SendPropose`).

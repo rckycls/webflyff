@@ -220,6 +220,11 @@ export interface GatewayOptions {
   certify?: (n: number) => Uint8Array;
   /** Webby's level and equipment in the character list: `LISTED_WEBBY` unless said. */
   listed?: Listed;
+  /**
+   * custom (owner 2026-11-20): let the Quick Job Change window pop up by itself. Webby is a level 15 Vagrant, due his first
+   * job, so every other test turns the pop-up off (`flyffweb.jobPopup` = 'off', world/jobs/quickJobChange.ts).
+   */
+  jobPopup?: boolean;
 }
 
 /**
@@ -229,6 +234,11 @@ export interface GatewayOptions {
 export async function playGateway(
   page: Page, world: WorldScript | ((entry: number) => WorldScript) = flaris, options: GatewayOptions = {},
 ): Promise<Gateway> {
+  if (options.jobPopup !== true) {
+    await page.addInitScript(() => {
+      try { localStorage.setItem('flyffweb.jobPopup', 'off'); } catch { /* storage blocked: the pop-up may show */ }
+    });
+  }
   // a script per entry (the n-th login connection's and its cache connection's), so a reconnect gets a fresh world
   let entries = 0;
   let script = typeof world === 'function' ? world(1) : world;
