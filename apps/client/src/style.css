@@ -1769,7 +1769,8 @@ fieldset:disabled .btn {
    read over the world. One row from the status window to the Navigator, on the old text buttons' middle line (24 px down);
    on the phone the target bar and the quest list go under it (owner's choice). An icon's press area is 48 px high, and as
    wide as the icon plus half the space the first version left between two icons, which was 60 px less the icon: about
-   12 px on a Pixel 7 (was 23). The icon is 32 px, or the whole multiple of it in device pixels that MobileTools sets. */
+   12 px on a Pixel 7 (was 23). The icon is 32 px, or the whole multiple of it in device pixels that MobileTools sets.
+   2026-11-20: on the desktop too (below). */
 .hud-mobile-tools { display: none; }
 .hud-mobile-tools > button {
   display: flex;
@@ -1842,6 +1843,27 @@ fieldset:disabled .btn {
    the status window share its top (at 568 px the 36 px cells of a 2.625 screen left the bar no room) */
 @media (max-width: 599px) and (pointer: coarse) {
   .world { --hud-mobile-icon: 28px; }
+}
+/* 2026-11-20 (owner, "add the 10 icons like mobile in desktop as well"): the desktop (everything but a touch phone) shows
+   the same two rows of five at the top right, left of the Navigator (144 px wide, at the top right where it opens) with
+   6 px between, or at the right edge while it is closed; the icons at Client/Icon's 32 px, in cells of 36, under the
+   windows as on the phone. The target bar at the top centre (200 px) stays clear of them down to a 1000 px wide window.
+   Stats is the diagnostics panel's own button there. Each icon's tooltip is the task bar's (mobileTools.ts). */
+@media not all and (max-width: 1000px) and (pointer: coarse) {
+  .hud-mobile-tools {
+    display: grid;
+    grid-template-columns: repeat(5, 36px);
+    position: absolute;
+    z-index: 0;
+    top: 2px;
+    right: 8px;
+  }
+  .world:has(.hud-navigator:not([hidden])) .hud-mobile-tools { right: 150px; }
+  .hud-mobile-tools > button[data-icon] { width: 36px; min-width: 0; height: 36px; padding: 0; cursor: pointer; }
+  .hud-mobile-tools > button[data-icon]:hover { filter: brightness(1.15); }
+  .hud-mobile-tools > button[data-icon]:active { filter: brightness(1.4); }
+  .hud-mobile-tools .hud-mobile-tool-icon { width: 32px; height: 32px; }
+  .hud-mobile-tools > button:not([data-icon]) { display: none; }
 }
 /* 2026-11-10 (owner): Attack, Jump and the flight buttons in the windows' colours (the phone panels' beige, #dba98c
    border, #795431 shade), a dark brown ring and shadow keeping them clear of the world behind */
@@ -5236,7 +5258,13 @@ fieldset:disabled .btn {
 /* custom (owner 2026-11-15): the Auto Play window (hud/autoPlay/autoPlayWindow.ts): Farm, Potions and Skills under Neuz's
    tab strip (hud/guildCombat/tabs.ts), in the Action Slot window's colours */
 .hud-auto-play > .hud-window-body { box-sizing: border-box; padding: 4px; overflow: hidden; background: #fff6eb; }
-.auto-play-tabs { position: relative; width: 100%; height: 100%; }
+/* 2026-11-20 (owner, "stop and start should be inside the autoplay window"): the Start / Stop bar under the tab strip, on
+   every tab (autoPlayWindow.ts refreshRun): the silver word button, larger, and what Auto Play is doing beside it */
+.auto-play-tabs { position: relative; width: 100%; height: calc(100% - 32px); }
+.auto-play-run { display: flex; align-items: center; gap: 6px; height: 32px; padding: 4px 2px 0; box-sizing: border-box; }
+.auto-play-run .auto-farm-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: bold 12px/15px Verdana, Tahoma, sans-serif; }
+.hud-auto-play .auto-play-run .auto-word { flex: none; height: 26px; font-size: 12px; line-height: 24px; }
+.hud-auto-play .auto-play-run .auto-run-go { min-width: 84px; }
 .auto-play-tabs .hud-gc-page {
   box-sizing: border-box; padding: 4px 6px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
   display: flex; flex-direction: column; gap: 4px; border: 1px solid #8f8f8f; background: #fffaf5;
@@ -5278,16 +5306,10 @@ fieldset:disabled .btn {
 .auto-farm-line { display: flex; align-items: center; gap: 4px; min-height: 28px; }
 .auto-farm-caption { flex: none; width: 72px; font-weight: bold; }
 .auto-farm-radius, .auto-farm-stop-after { flex: none; width: 38px; text-align: center; }
-.auto-farm-go {
-  align-self: flex-start; min-width: 90px; height: 28px; padding: 0 12px; border: 1px solid #ba9377; border-radius: 4px;
-  background: #fff1df; color: #463027; font: bold 12px/1 Verdana, Arial, sans-serif;
-}
-.auto-farm-go:disabled { opacity: .45; }
 .auto-farm-state { font-weight: bold; }
 .auto-farm-stats { color: #6b5a4c; word-spacing: 4px; }
 @media (max-width: 1000px) and (pointer: coarse) {
   .auto-farm [data-auto-play] { min-width: 32px; height: 32px; }
-  .auto-farm-go { height: 34px; }
 }
 
 /* custom (owner 2026-11-15): Auto Play's AUTO button (hud/autoPlay/autoButton.ts): desktop, at the right end above the task
@@ -5391,7 +5413,6 @@ fieldset:disabled .btn {
 .saver-gauge[data-gauge='mp'] .saver-fill { background: #2f4a7a; }
 .saver-gauge[data-gauge='fp'] .saver-fill { background: #2f6a3a; }
 .saver-hint { font-size: 11px; color: #4a4a4a; }
-.auto-farm-buttons { display: flex; gap: 6px; }
 
 /* 2026-11-17 (owner, "make the whole auto play window follow the v15 theme"): the Auto Play window in the V15 family of
    the other windows (docs/2026-11-15-consistency-scan.md): Neuz's tiled frame showing around the pages, each page a pale
@@ -5434,7 +5455,6 @@ fieldset:disabled .btn {
 }
 .hud-awaken-line.is-empty { color: #000000; }
 .hud-awaken-confirm [data-control="WIDC_CHECK"] { display: flex; align-items: center; font: 12px Verdana, Tahoma, sans-serif; }
-.hud-auto-play .auto-farm-go { min-width: 70px; height: 24px; padding: 0 10px; font-size: 12px; line-height: 22px; animation: none; }
 .hud-auto-play .auto-slot {
   width: 34px; height: 34px; padding: 1px; border: 0; border-radius: 0;
   background: var(--v15-slot, #f3e4d8) 0 0 / 100% 100% no-repeat;
@@ -5446,7 +5466,10 @@ fieldset:disabled .btn {
 @media (max-width: 1000px) and (pointer: coarse) {
   :is(.hud-auto-play, .hud-awaken-confirm) .auto-check { min-height: 28px; }
   .hud-auto-play .auto-word { min-width: 30px; height: 30px; font-size: 12px; line-height: 28px; }
-  .hud-auto-play .auto-farm-go { height: 32px; line-height: 30px; }
+  /* 2026-11-20: the Start / Stop bar a finger's size */
+  .hud-auto-play .auto-play-tabs { height: calc(100% - 38px); }
+  .hud-auto-play .auto-play-run { height: 38px; }
+  .hud-auto-play .auto-play-run .auto-word { height: 32px; line-height: 30px; }
   .hud-auto-play .auto-slot-clear { width: 20px; height: 20px; font-size: 12px; line-height: 18px; }
 }
 

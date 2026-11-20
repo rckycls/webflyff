@@ -1,33 +1,29 @@
 // custom (owner 2026-11-15): Auto Play's AUTO button, with no counterpart in Neuz: grey "AUTO" while the farm bot is off,
-// gold while it runs, a "!" after it stopped (its reason in the tip). A click starts or stops the farm bot with the saved
-// settings; a right-click or a long press (500 ms) opens the Auto Play window. Desktop: at the right end above the task
-// bar; phone: above the quick slot over Attack (style.css).
+// gold while it runs, a "!" after it stopped (its reason in the tip). Desktop: at the right end above the task bar; phone:
+// above the quick slot over Attack (style.css).
 // 2026-11-20 (owner, "move Autoplay button icon to the place of Auto icon. Add an active autoplay indicator like a glow
 // animation or rotate glow"): the button is Auto Play's own icon (the gear with the play sign, src/icons/big), no word;
 // while the farm bot runs a gold glow turns round it (style.css); the "!" after a stop is a red badge. (A second finger's
 // tap, while the first walks, clicks it too: secondFingerTaps.ts.)
+// 2026-11-20 (owner, "the autoplay icon on display should open the autoplay window when clicked and not just stop and
+// start the autoplay. stop and start should be inside the autoplay window"): a click (a tap) opens the Auto Play window, or
+// closes it; it starts and stops nothing (the window's Start / Stop does, autoPlayWindow.ts). The glow and the "!" stay.
 
 import autoPlayIcon from '../../../icons/big/icon_autoplay.png';
 
-/** What the button reads and drives of Auto Play. */
+/** What the button reads of Auto Play. */
 export interface AutoButtonPlay {
   readonly farm: 'off' | 'running' | 'stopped';
   readonly lastStop: string | null;
-  start(): boolean;
-  stop(reason: string): void;
-  /** 2026-11-17: the mode last started (the farm bot or Support mode). */
-  startMode?(): boolean;
 }
 
 export class AutoButton {
   readonly element: HTMLButtonElement;
   private readonly mark: HTMLElement;
   private shown = '';
-  /** A press held for LONG_PRESS_MS opens the window; the click that ends it does nothing. */
-  private holdTimer: ReturnType<typeof setTimeout> | undefined;
-  private longPressed = false;
 
-  constructor(private readonly play: AutoButtonPlay, private readonly openWindow: () => void, doc: Document = document) {
+  /** `toggleWindow` opens the Auto Play window, or closes it while it is open. */
+  constructor(private readonly play: AutoButtonPlay, toggleWindow: () => void, doc: Document = document) {
     const button = doc.createElement('button');
     button.type = 'button';
     button.className = 'hud-auto-button';
@@ -39,34 +35,10 @@ export class AutoButton {
     this.mark = doc.createElement('span');
     this.mark.className = 'hud-auto-mark';
     button.append(icon, this.mark);
-    button.addEventListener('click', () => {
-      if (this.longPressed) { this.longPressed = false; return; }
-      this.toggle();
-    });
-    button.addEventListener('pointerdown', () => {
-      this.longPressed = false;
-      clearTimeout(this.holdTimer);
-      this.holdTimer = setTimeout(() => {
-        this.longPressed = true;
-        this.openWindow();
-      }, LONG_PRESS_MS);
-    });
-    for (const end of ['pointerup', 'pointercancel', 'pointerleave']) {
-      button.addEventListener(end, () => clearTimeout(this.holdTimer));
-    }
-    button.addEventListener('contextmenu', (event) => {
-      event.preventDefault();
-      if (!this.longPressed) this.openWindow(); // a phone's long press may also bring a contextmenu
-    });
+    button.addEventListener('click', () => { toggleWindow(); button.blur(); });
+    // no browser menu on a right-click or a phone's long press
+    button.addEventListener('contextmenu', (event) => event.preventDefault());
     this.element = button;
-    this.refresh();
-  }
-
-  /** Starts the farm bot (the mode last started), or stops it while it runs. */
-  private toggle(): void {
-    if (this.play.farm === 'running') this.play.stop('you took control');
-    else if (this.play.startMode !== undefined) this.play.startMode();
-    else this.play.start();
     this.refresh();
   }
 
@@ -78,13 +50,10 @@ export class AutoButton {
     this.shown = key;
     this.element.dataset.state = farm;
     this.mark.textContent = farm === 'stopped' ? '!' : '';
-    this.element.title = farm === 'running' ? 'Auto Play: running (click to stop)'
-      : farm === 'stopped' ? `Auto Play stopped: ${lastStop ?? ''}` : 'Auto Play (click to start, right-click for settings)';
+    this.element.title = farm === 'running' ? 'Auto Play: running'
+      : farm === 'stopped' ? `Auto Play stopped: ${lastStop ?? ''}` : 'Auto Play';
   }
 }
-
-/** How long a press opens the window instead of starting (ms). */
-export const LONG_PRESS_MS = 500;
 
 const STOPPED_TITLE = '(!) Stopped - ';
 

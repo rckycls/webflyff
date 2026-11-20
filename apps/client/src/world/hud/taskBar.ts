@@ -140,7 +140,7 @@ const HOTKEYS: ReadonlyMap<string, number> = new Map(
  * are `TID_APP_STATUS`, `TID_APP_CHARACTER`, `TID_APP_SKILL` and `TID_APP_LOGOUT`). A line whose window Piece 4 lacks is
  * greyed.
  */
-const MENU: ReadonlyArray<{ id: number; text: string } | { folder: string; items: ReadonlyArray<{ id: number; text: string }> }> = [
+export const MENU: ReadonlyArray<{ id: number; text: string } | { folder: string; items: ReadonlyArray<{ id: number; text: string }> }> = [
   { id: AppId.STATUS1, text: 'Status' },
   { id: AppId.CHARACTER3, text: 'Character' },
   { id: AppId.SKILL3, text: 'Skills' },

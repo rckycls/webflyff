@@ -33,7 +33,8 @@ test('camera gestures, jump and phone controls share the world without stray act
 
   const size = page.viewportSize()!;
   if (!isMobile) {
-    await expect(page.getByRole('toolbar', { name: 'Window shortcuts' })).toBeHidden();
+    // 2026-11-20 (owner, "add the 10 icons like mobile in desktop as well"): the desktop shows the shortcuts too
+    await expect(page.getByRole('toolbar', { name: 'Window shortcuts' })).toBeVisible();
     const cameraBefore = await page.evaluate(() => window.__client!.camera());
     await page.keyboard.down('ArrowRight');
     await page.evaluate(() => window.__client!.step(10));
