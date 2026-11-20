@@ -991,8 +991,10 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(extrasMenu.hidden).toBe(false);
     const extrasItems = [...extrasMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
     // custom (owner 2026-11-20): and the Redeem Code window
-    expect(extrasItems.map((item) => item.getAttribute('aria-label'))).toEqual(['Pet Filter', 'Awaken', 'Teleport', 'Redeem Code']);
-    expect(extrasItems.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['U', '', '', '']);
+    // custom (owner 2026-11-20): and the Quick Job Change window's line, last
+    expect(extrasItems.map((item) => item.getAttribute('aria-label'))).toEqual(['Pet Filter', 'Awaken', 'Teleport', 'Redeem Code', 'Job Change']);
+    expect(extrasItems.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['U', '', '', '', '']);
+    expect(extrasItems[4]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_jobchange.png');
     expect(extrasItems[1]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_awaken.png');
     expect(extrasItems[2]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_teleport.png');
     expect(extrasItems[3]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/item/itm_syssysevecoupon.png');
@@ -1003,6 +1005,11 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     extras.click();
     extrasItems[3]!.click();
     expect(calls).toEqual(['open redeemCode']);
+    calls.length = 0;
+    start.click();
+    extras.click();
+    extrasItems[4]!.click();
+    expect(calls).toEqual(['open quickJob']);
     calls.length = 0;
     start.click();
     expect(submenu.hidden).toBe(true);
@@ -1021,8 +1028,8 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     document.body.dispatchEvent(pointer('pointerdown', 400, 100));
     expect(bar.menuOpen).toBe(false);
     // its owner hears each opening and closing (the world screen hides the joystick meanwhile; 2026-11-18: Messenger's too)
-    // 2026-11-19: and the Extras folder's Teleport; 2026-11-20: and its Redeem Code
-    expect(changes).toEqual([true, false, true, false, true, false, true, false, true, false, true, false, true, false]);
+    // 2026-11-19: and the Extras folder's Teleport; 2026-11-20: and its Redeem Code and Job Change
+    expect(changes).toEqual([true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false]);
   });
 
   it('a press on an applet with a window in Piece 4 opens it; the other applets do nothing; a non-applet goes to the owner', () => {
@@ -1152,14 +1159,20 @@ describe('APPLETS (CWndMgr::AddAllApplet, FuncApplet.cpp:178-301)', () => {
     // 2026-11-20 (owner): and the Awaken and Teleport windows'
     expect(APPLETS.get(9004)).toEqual({ name: 'APP_AWAKEN', icon: 'Icon_Awaken.png', desc: { text: 'Awaken' }, hotkey: null });
     expect(APPLETS.get(9005)).toEqual({ name: 'APP_TELEPORT', icon: 'Icon_Teleport.png', desc: { text: 'Teleport' }, hotkey: null });
-    for (const id of [9001, 9002, 9003, 9004, 9005]) {
+    // custom (owner 2026-11-20): and the Quick Job Change window's
+    expect(APPLETS.get(9007)).toEqual({ name: 'APP_QUICK_JOB_CHANGE', icon: 'Icon_JobChange.png', desc: { text: 'Job Change' }, hotkey: null });
+    for (const id of [9001, 9002, 9003, 9004, 9005, 9007]) {
       const file = APPLETS.get(id)!.icon!;
       for (const key of [themeKey(file), bareIconKey(file)]) {
-        expect(OWN_ICONS.get(key), key).toMatch(/icon_(siegeranking|autoplay|petfilter|awaken|teleport)\.png$/);
+        expect(OWN_ICONS.get(key), key).toMatch(/icon_(siegeranking|autoplay|petfilter|awaken|teleport|jobchange)\.png$/);
         expect(OWN_ICONS.get(key)!.includes('/bare/')).toBe(key.startsWith('ui/bare/'));
       }
     }
-    expect(OWN_ICONS.size).toBe(16); // and the four VIP stars and the two weekly crests (render/nameTags.ts)
+    // custom (owner 2026-11-20): the Quick Job Change window's icon, framed and not, and its 24 job portraits
+    expect(OWN_ICONS.get('ui/icon_jobchange.png')).toMatch(/icon_jobchange\.png$/);
+    expect(OWN_ICONS.get('ui/bare/icon_jobchange.png')).toMatch(/bare\/icon_jobchange\.png$/);
+    // and the four VIP stars and the two weekly crests (render/nameTags.ts)
+    expect(OWN_ICONS.size).toBe(16 + 2 + 24);
   });
 });
 

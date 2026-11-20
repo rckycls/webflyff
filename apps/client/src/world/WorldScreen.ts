@@ -213,6 +213,9 @@ import { ItemUse } from './items/itemUse';
 import { PET_FILTER_NONE, loadPetFilter, petFilterBlocks, savePetFilter } from './items/petFilter';
 import { PetFilterWindow } from './hud/petFilterWindow';
 import { TeleportWindow } from './hud/teleportWindow'; // custom (owner 2026-11-19)
+import { QuickJobChangeWindow } from './jobs/quickJobChangeWindow'; // custom (owner 2026-11-20)
+import { dueTier, jobPopupOff, ownExpPercent, shouldPopUp } from './jobs/quickJobChange'; // custom (owner 2026-11-20)
+import type { JobTier } from './jobs/quickJobChange'; // custom (owner 2026-11-20)
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { UpgradeCursor } from './items/upgradeCursor';
 import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
@@ -832,6 +835,14 @@ export class WorldScreen {
   private teleportWindow: TeleportWindow | undefined;
   /** custom (owner 2026-11-20): the Redeem Code window, from the Start menu's Extras folder (codes/redeemCodeWindow.ts). */
   private redeemCodeWindow: RedeemCodeWindow | undefined;
+  /**
+   * custom (owner 2026-11-20): the Quick Job Change window; the tier due at the last look, the job seen then, and whether
+   * the player closed the window while that tier was due (it does not pop up again for it this session).
+   */
+  private quickJobWindow: QuickJobChangeWindow | undefined;
+  private quickJobTier: JobTier | null = null;
+  private quickJobJob: number | null = null;
+  private quickJobDismissed = false;
   /** custom (owner 2026-11-20): moves a redeemed code's mails into the bag (codes/codeMailTaker.ts). */
   private codeMailTaker: CodeMailTaker | undefined;
   /** custom (owner 2026-11-20): the site session kept alive while in the world (60 minutes idle), for the codes. */
@@ -1545,7 +1556,29 @@ export class WorldScreen {
         this.recolorTags();
       }
     }
+    this.checkQuickJob(false); // custom (owner 2026-11-20)
   }
+
+  /**
+   * custom (owner 2026-11-20): the Quick Job Change window after the own player's state may have changed. A new job (the
+   * World's SET_JOB_SKILL, by the window or an NPC) closes it; a tier newly due pops it up once the world is on screen, as
+   * does any due tier at the login (shouldPopUp); a tier no longer due closes it.
+   */
+  private checkQuickJob(login: boolean): void {
+    const own = this.own, window = this.quickJobWindow, data = this.data;
+    if (own === undefined || window === undefined || data === undefined) return;
+    if (this.quickJobJob !== null && own.job !== this.quickJobJob) window.jobChanged();
+    this.quickJobJob = own.job;
+    const now = dueTier(own.job, own.level, ownExpPercent(own.exp, own.level, data.exp));
+    if (now !== this.quickJobTier) this.quickJobDismissed = false;
+    if (now === null && window.isOpen) window.jobChanged();
+    const shown = login || this.stageDrawn;
+    if (shown && !window.isOpen && shouldPopUp(this.quickJobTier, now, login, this.quickJobDismissed, jobPopupOff(autoPlayStorage() ?? undefined))) {
+      window.open();
+    }
+    if (shown) this.quickJobTier = now;
+  }
+
 
   /**
    * 2026-11-20 (loading screen): a fresh loading screen for an entry into `worldId` (the first, or a change of world),
@@ -2592,6 +2625,20 @@ export class WorldScreen {
       sayTid: (tid) => this.sayRefusal({ kind: 'say', tid }),
       send: (place) => this.session.sendTeleportWindow(place),
     }, this.hudArt!, doc);
+    // custom (owner 2026-11-20): the Quick Job Change window (jobs/quickJobChangeWindow.ts): it pops up by itself when a job
+    // change is due (checkQuickJob) and opens from Start -> Extras; the World checks it all again
+    this.quickJobWindow = new QuickJobChangeWindow({
+      job: () => this.own?.job ?? 0,
+      level: () => this.own?.level ?? 0,
+      expPercent: () => (this.own === undefined ? 0 : ownExpPercent(this.own.exp, this.own.level, this.data!.exp)),
+      sex: () => this.own?.sex ?? 0,
+      started: (questId) => this.own !== undefined && (this.own.quests.has(questId) || this.own.completedQuests.includes(questId)),
+      // completed, or still a current quest at QS_END (14), as the World's QjcDone
+      done: (questId) => this.own !== undefined && (this.own.completedQuests.includes(questId) || this.own.quests.get(questId)?.state === 14),
+      say: (text) => this.hud?.messages.add(text, this.data?.texts.get('TID_GAME_LACKMONEY')?.color ?? 0xffffffff),
+      send: (job) => this.session.sendQuickJobChange(job),
+    }, this.hudArt!, doc);
+    this.quickJobWindow.onClosed = () => { this.quickJobDismissed = true; };
     // custom (owner 2026-11-20): the Redeem Code window, on its own site API (the session cookie the lobby's login made);
     // the session is touched every 30 minutes while in the world, so it does not run out after 60 idle minutes
     const codeApi = new VipApi((...args) => globalThis.fetch(...args), newRequestId);
@@ -3065,6 +3112,7 @@ export class WorldScreen {
       this.petFilterWindow.element, // custom (owner 2026-11-16)
       this.teleportWindow.element, // custom (owner 2026-11-19)
       this.redeemCodeWindow.element, // custom (owner 2026-11-20)
+      this.quickJobWindow.element, // custom (owner 2026-11-20)
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
@@ -3988,6 +4036,8 @@ export class WorldScreen {
       // the world is on screen: `ready()` (a second call does nothing), and an ending from here on is a drop
       this.endingsAreDrops = true;
       this.resolveShown();
+      // custom (owner 2026-11-20): the Quick Job Change window pops up at the login while a job change is due
+      if (!this.stageDrawn) this.checkQuickJob(true);
       this.stageDrawn = true;
       delete this.element.dataset.loading;
       this.onScreenAt ??= performance.timeOrigin + performance.now();
@@ -4440,6 +4490,7 @@ this.follow(world, stage);
     if (window === 'guildFurniture') { this.guildHouseHud?.toggleStorage(); return; }
     if (window === 'teleport') { this.teleportWindow?.toggle(); return; } // custom (owner 2026-11-19): the Teleport window
     if (window === 'redeemCode') { this.redeemCodeWindow?.toggle(); return; } // custom (owner 2026-11-20): the Redeem Code window
+    if (window === 'quickJob') { this.quickJobWindow?.toggle(); return; } // custom (owner 2026-11-20): the Quick Job Change window
     if (window === 'couple') { this.social?.coupleWindow.toggle(); return; } // 2026-11-15 (social)
     // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window, from the Start menu and the icons
     if (window === 'siegeRanking') { this.guildCombatHud?.siegeRanking.toggle(); return; }

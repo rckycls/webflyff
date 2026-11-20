@@ -9,8 +9,13 @@
 // 2026-11-20 (owner, "make one for Teleporter window and Awaken window"): the Teleport and Awaken windows' icons too, in
 // the place of the Blinkwing's and the Scroll of Awakening's item icons.
 
+// custom (owner 2026-11-20): the Quick Job Change window's icon (the same draw script) and its 24 job portraits, drawn
+// ahead from the game's own models by scripts/renderJobPortraits.ts (src/icons/jobs/job<N>_<m|f>.png).
+
 import autoPlay from '../../icons/icon_autoplay.png';
 import awaken from '../../icons/icon_awaken.png';
+import jobChange from '../../icons/icon_jobchange.png';
+import jobChangeBare from '../../icons/bare/icon_jobchange.png';
 import petFilter from '../../icons/icon_petfilter.png';
 import siegeRanking from '../../icons/icon_siegeranking.png';
 import teleport from '../../icons/icon_teleport.png';
@@ -33,7 +38,21 @@ export const OWN_ICON_FILES = {
   petFilter: 'Icon_PetFilter.png',
   awaken: 'Icon_Awaken.png',
   teleport: 'Icon_Teleport.png',
+  jobChange: 'Icon_JobChange.png',
 } as const;
+
+/** The job portraits' URLs (the build's), by file name (`job6_m.png`). */
+const JOB_PORTRAITS = Object.entries(import.meta.glob<string>('../../icons/jobs/*.png', { eager: true, import: 'default' }))
+  .map(([file, url]): [string, string] => [`ui/jobs/${file.slice(file.lastIndexOf('/') + 1)}`, url]);
+
+/**
+ * The UI key of the Quick Job Change window's picture of `job` for `sex` (0 male, 1 female): a Master (16-23) and a Hero
+ * (24-31) use their second job's (6-13), with the Master or Hero mark over it (jobs/quickJobChangeWindow.ts).
+ */
+export function jobPortraitKey(job: number, sex: number): string {
+  const drawn = job >= 24 ? job - 18 : job >= 16 ? job - 10 : job;
+  return `ui/jobs/job${drawn}_${sex === 1 ? 'f' : 'm'}.png`;
+}
 
 /** The own icons' URLs (the build's), by their UI keys. */
 export const OWN_ICONS: ReadonlyMap<string, string> = new Map([
@@ -53,4 +72,7 @@ export const OWN_ICONS: ReadonlyMap<string, string> = new Map([
   ['ui/vipstar4.png', vipStar4],
   ['ui/weeklychampion.png', weeklyChampion],
   ['ui/weeklymvp.png', weeklyMvp],
+  ['ui/icon_jobchange.png', jobChange],
+  ['ui/bare/icon_jobchange.png', jobChangeBare],
+  ...JOB_PORTRAITS,
 ]);
