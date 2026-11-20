@@ -270,8 +270,9 @@ test.describe('landscape (spec §3.10)', () => {
       const extras = page.getByRole('menu', { name: 'Extras' });
       await expect(extras).toBeVisible();
       await expectOnScreen(extras, `the Extras sub-menu at ${size.width} x ${size.height}`, await barTop(page));
-      await expect(extras.getByRole('menuitem')).toHaveText([/Pet Filter/, /Awaken/, /Teleport/]);
-      for (const [name, file] of [['Pet Filter', 'icon_petfilter'], ['Awaken', 'icon_awaken'], ['Teleport', 'icon_teleport']] as const) {
+      // 2026-11-20 (custom): and the Redeem Code and Job Change windows' lines
+      await expect(extras.getByRole('menuitem')).toHaveText([/Pet Filter/, /Awaken/, /Teleport/, /Redeem Code/, /Job Change/]);
+      for (const [name, file] of [['Pet Filter', 'icon_petfilter'], ['Awaken', 'icon_awaken'], ['Teleport', 'icon_teleport'], ['Job Change', 'icon_jobchange']] as const) {
         await expect(extras.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
       }
       await page.screenshot({ path: info.outputPath(`start-menu-extras-${size.width}x${size.height}.png`) });
