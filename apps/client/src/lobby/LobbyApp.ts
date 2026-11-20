@@ -20,6 +20,8 @@ import type { View } from './views/dom';
 import { frameLobby, skinLobby } from './skin';
 import { WorldPrefetch } from './worldPrefetch';
 import { pageAssets, pageGameData } from '../pageAssets';
+import { themeKey } from '../world/hud/art';
+import { loadingPictures } from '../world/loading/loadingPicture';
 
 type Screen = 'login' | 'alreadyConnected' | 'servers' | 'characters' | 'create' | 'delete';
 
@@ -51,7 +53,9 @@ export class LobbyApp {
   /** `InvalidName_ENG.inc` and `Letter_ENG.inc` (the party catalog) for the create window, once loaded. */
   private nameRules: { invalidNames: readonly string[]; letters: string } | null = null;
   /** The selected character's world, fetched into the browser's cache while the list is shown (`WorldPrefetch`). */
-  private readonly prefetch = new WorldPrefetch(pageAssets, async (worldId) => (await pageGameData()).worlds.get(worldId));
+  // 2026-11-20 (loading screen): with the picture the entry will show
+  private readonly prefetch = new WorldPrefetch(pageAssets, async (worldId) => (await pageGameData()).worlds.get(worldId),
+    undefined, undefined, (worldId) => themeKey(loadingPictures.peek(worldId)));
   /** The account last typed, so a player sent back to the login form does not type it again. */
   private account = '';
   /** custom (owner 2026-11-17): the password just typed, until the server list (then onLoggedIn has it), else ''. */

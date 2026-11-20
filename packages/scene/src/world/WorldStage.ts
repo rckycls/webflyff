@@ -229,6 +229,11 @@ export class WorldStage {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /** 2026-11-20 (loading screen): the tiles of the last `focus` that are on screen as `ready` waits for them, of all of them. */
+  progress(): { done: number; total: number } {
+    return this.streamer.progress();
+  }
+
   /** The tiles whose ground is on screen, and the models the objects use that are loaded. */
   counts(): { tiles: number; models: number } {
     return { tiles: this.streamer.count(), models: this.pool.modelCount() };

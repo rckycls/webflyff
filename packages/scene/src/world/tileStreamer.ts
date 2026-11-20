@@ -115,6 +115,8 @@ interface Entry {
   loaded: boolean;
   /** Ground and objects are on screen, and the collision shapes in (or failed). Never rejects. */
   settled: Promise<void>;
+  /** 2026-11-20 (loading screen): `settled` has resolved. */
+  done: boolean;
   /** What was added to the overlay's GPU estimate for the ground. */
   bytes: number;
   unloaded: boolean;
@@ -218,6 +220,12 @@ export class TileStreamer {
     await Promise.all(pending);
   }
 
+  /** 2026-11-20 (loading screen): the visible tiles of the last `update` that have settled, of all of them. */
+  progress(): { done: number; total: number } {
+    const done = this.visible.filter((key) => this.entries.get(key)?.done === true).length;
+    return { done, total: this.visible.length };
+  }
+
   /** The number of tiles whose ground is in (`loaded`). */
   count(): number {
     return this.loaded().length;
@@ -270,12 +278,13 @@ export class TileStreamer {
       objects: null,
       loaded: false,
       settled: Promise.resolve(),
+      done: false,
       bytes: 0,
       unloaded: false,
     };
     this.entries.set(key, entry);
     this.byIndex.set(y * this.manifest.size[0] + x, entry);
-    entry.settled = this.store.tile(this.world, x, y).then(
+    const settled = this.store.tile(this.world, x, y).then(
       (tile) => {
         if (entry.unloaded) return;
         if (tile === null) {
@@ -289,6 +298,7 @@ export class TileStreamer {
         this.flat(entry, x, y, error instanceof Error ? error.message : String(error));
       },
     );
+    entry.settled = settled.finally(() => { entry.done = true; });
   }
 
   private async show(entry: Entry, tile: WebTile): Promise<void> {

@@ -160,10 +160,13 @@ describe('WorldStage tiles', () => {
     const here = middleOf(5, 7);
 
     expect(stage.loadedTiles()).toEqual([]);
+    expect(stage.progress()).toEqual({ done: 0, total: 0 });
     stage.focus(here);
     // the tile is asked for, not here yet
     expect(stage.heightAt(here)).toBeNull();
+    expect(stage.progress()).toEqual({ done: 0, total: 9 }); // 2026-11-20 (loading screen)
     await stage.ready();
+    expect(stage.progress()).toEqual({ done: 9, total: 9 });
 
     const visible = [];
     for (let y = 6; y <= 8; y++) for (let x = 4; x <= 6; x++) visible.push(`${x}_${y}`);

@@ -59,6 +59,15 @@ describe('the dialogue window (APP_DIALOG_EX, WndDialog.cpp)', () => {
     }
   });
 
+  it("lists the loading screen's eight pictures once each, and not the ones Neuz never draws (2026-11-20)", () => {
+    const lower = THEME_FILES.map((file) => file.toLowerCase());
+    for (const file of ['maploading2.tga', 'maploading3.tga', 'maploading4.tga', 'maploading_guildwar.tga',
+      'maploading_ominous.tga', 'maploading_ominous_1.tga', 'maploading_dreadfulcave.tga', 'maploading_guildhouse.tga']) {
+      expect(lower.filter((name) => name === file), file).toHaveLength(1);
+    }
+    for (const file of ['maploading.tga', 'maploading5.tga', 'maploading6.tga', 'maploading7.tga']) expect(lower).not.toContain(file);
+  });
+
   it('lists its background, its next-page button and the four quest papers once each', () => {
     const lower = THEME_FILES.map((file) => file.toLowerCase());
     for (const file of ['wnddialogex.tga', 'wndbuttenter.bmp', 'questuipapergreen.tga', 'questuipaperred.tga',
