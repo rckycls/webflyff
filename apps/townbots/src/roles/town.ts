@@ -1,6 +1,7 @@
-// The town roles: wandering between the places players gather (standing, sitting, a motion now and then), AFK (one
-// place for the whole role), and upgrading by the upgrade NPC (real tries on the bot's own spare gear: everyone nearby
-// sees the success or fail sparkle the server sends).
+// The town roles: wandering between the places players gather (standing, in combat stance now and then, a motion now
+// and then), AFK (one place for the whole role), and upgrading by the upgrade NPC (real tries on the bot's own spare
+// gear: everyone nearby sees the success or fail sparkle the server sends). Nobody sits, and a town place another bot
+// of the region holds is never taken (`RoleIo.pickPlace`): with none free, the bot stays where it is and asks again.
 import type { InventoryItem, Vec3 } from '@flyffweb/protocol';
 import { TownWalk } from './route';
 import { between } from './types';
@@ -12,6 +13,8 @@ const MIN = 60 * SEC;
 const MAX_UPGRADE = 10;
 /** An upgrade with no answer after this long is over (ms). */
 const UPGRADE_ANSWER_MS = 10 * SEC;
+/** With every place held by others, a bot asks again after this long (ms). */
+const NO_PLACE_WAIT_MS = 30 * SEC;
 
 const pick = <T>(list: readonly T[], random: () => number): T => list[Math.min(list.length - 1, Math.floor(random() * list.length))]!;
 
@@ -29,14 +32,15 @@ export class WanderRole implements RoleRunner {
 
   tick(): RoleStatus {
     const now = this.io.now();
-    if (now >= this.until) {
-      if (this.io.sitting()) this.io.stand();
-      return 'done';
-    }
+    if (now >= this.until) return 'done';
     if (this.walk === null) {
       if (now < this.idleUntil) return 'running';
-      if (this.io.sitting()) this.io.stand();
-      this.walk = new TownWalk(pick(this.town, this.io.random), this.io);
+      const place = this.io.pickPlace(this.town);
+      if (place === undefined) {
+        this.idleUntil = now + NO_PLACE_WAIT_MS;
+        return 'running';
+      }
+      this.walk = new TownWalk(place, this.io);
     }
     if (this.walk.tick() !== 'walking') {
       this.walk = null;
@@ -47,20 +51,15 @@ export class WanderRole implements RoleRunner {
 
   busy(): boolean { return false; }
 
-  stop(): void {
-    if (this.io.sitting()) this.io.stand();
-  }
+  stop(): void {}
 
-  /** At a place: sits 1-3 minutes (1 in 4), or plays a motion and stands (1 in 5), or stands 10-60 s. */
+  /** At a place, for 10-60 s: plays a friendly motion (1 in 4), takes combat stance (1 in 4), or just stands. */
   private arrive(now: number): void {
     const roll = this.io.random();
-    if (roll < 0.25) {
-      this.io.sit();
-      this.idleUntil = now + between(this.io.random, MIN, 3 * MIN);
-    } else {
-      if (roll < 0.45 && this.motions.length > 0) this.io.motion(pick(this.motions, this.io.random));
-      this.idleUntil = now + between(this.io.random, 10 * SEC, 60 * SEC);
-    }
+    if (roll < 0.25 && this.motions.length > 0) this.io.motion(pick(this.motions, this.io.random));
+    else if (roll < 0.5) this.io.combatStance();
+    else this.io.peaceStance();
+    this.idleUntil = now + between(this.io.random, 10 * SEC, 60 * SEC);
   }
 }
 
@@ -69,22 +68,30 @@ export class AfkRole implements RoleRunner {
   private readonly until: number;
   private walk: TownWalk | null = null;
   private settled = false;
+  /** No free place: asks again then. */
+  private askAt = 0;
 
   constructor(private readonly town: readonly Vec3[], private readonly io: RoleIo, duration: () => number) {
     this.until = io.now() + duration();
   }
 
   tick(): RoleStatus {
-    if (this.io.now() >= this.until) {
-      if (this.io.sitting()) this.io.stand();
-      return 'done';
-    }
+    const now = this.io.now();
+    if (now >= this.until) return 'done';
     if (this.settled) return 'running';
-    this.walk ??= new TownWalk(pick(this.town, this.io.random), this.io);
-    // there, or stuck on the way: it settles where it is
+    if (this.walk === null) {
+      if (now < this.askAt) return 'running';
+      const place = this.io.pickPlace(this.town);
+      if (place === undefined) {
+        this.askAt = now + NO_PLACE_WAIT_MS;
+        return 'running';
+      }
+      this.walk = new TownWalk(place, this.io);
+    }
+    // there, or stuck on the way: it settles where it is, one in two in combat stance, the rest just standing
     if (this.walk.tick() !== 'walking') {
-      // two in three sit, the rest just stand there
-      if (this.io.random() < 2 / 3) this.io.sit();
+      if (this.io.random() < 0.5) this.io.combatStance();
+      else this.io.peaceStance();
       this.settled = true;
     }
     return 'running';
@@ -92,9 +99,7 @@ export class AfkRole implements RoleRunner {
 
   busy(): boolean { return false; }
 
-  stop(): void {
-    if (this.io.sitting()) this.io.stand();
-  }
+  stop(): void {}
 }
 
 export class UpgradeRole implements RoleRunner {
