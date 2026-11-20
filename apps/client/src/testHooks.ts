@@ -119,7 +119,7 @@ export interface ClientHooks {
    * 2026-11-17 (wing capes): the wing capes hung on the movers' backs: the mover, the cape's item, whether it is drawn (not
    * while flying), and the motion its wings play.
    */
-  wingCapes?(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: 'idle' | 'stand' | 'walk' | null }>;
+  wingCapes?(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: 'idle' | 'flap' | 'stand' | 'walk' | null }>;
   /**
    * 2026-11-18 (ground mount): each player with the mount's buff: whether its wolf is drawn under it, and its run a step
    * (the rules' `body.speed`).
