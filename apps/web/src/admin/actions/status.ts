@@ -18,7 +18,7 @@ const status: ActionHandler = async (_body, _ctx, deps) => {
   if (sql && !stale) online = await deps.store.onlineCharacters().catch(() => null);
   return reply(200, {
     servers, gateway: gateway === 'open', sql, stale, online,
-    // the accounts left out of the counts (WEB_NOT_COUNTED) are not players
+    // the accounts in WEB_NOT_COUNTED are not players here (the website's count, usp_WebOnlineCount, has everyone)
     players: online === null ? null : online.filter((c) => c.counted !== false).length,
     bots: online === null ? null : online.filter((c) => c.counted === false).length,
     charactersOpen: lock.open, lockSeen: lock.seen,

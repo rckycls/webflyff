@@ -56,17 +56,21 @@ export interface Shared {
 /** A world session that ended before the bot was in it. */
 export class EndedBeforeEntering extends Error {}
 
-/** The account letters: a town bot plays as D; the setup runs as P (GM) and nothing else. */
-const LETTER_TOWNBOT = 0x44, LETTER_SETUP = 0x50;
+/**
+ * The account letters: a town bot plays with a player's letter, A to F (the VIP letters, the bot letter D, a plain F;
+ * the World knows a town bot by its letter D or its account name); the setup runs as P (GM) and nothing else.
+ */
+const LETTER_PLAY_FIRST = 0x41, LETTER_PLAY_LAST = 0x46, LETTER_SETUP = 0x50;
 
 /**
  * Why the bot must not play with the letter its own ADD_OBJ carries (`player.authorization`), or undefined: in the setup
- * only P, otherwise only D. A bot left GM by a setup that was cut off never plays as an administrator.
+ * only P, otherwise only A-F. A bot left GM by a setup that was cut off never plays as an administrator.
  */
 export function letterRefusal(authorization: number, setup: boolean): string | undefined {
   const letter = String.fromCharCode(authorization);
   if (setup) return authorization === LETTER_SETUP ? undefined : `the setup needs the GM letter P, but the account has the letter ${letter}`;
-  return authorization === LETTER_TOWNBOT ? undefined : `the account has the letter ${letter}, not the bot letter D: it does not play (run Install-TownBots again)`;
+  return authorization >= LETTER_PLAY_FIRST && authorization <= LETTER_PLAY_LAST ? undefined
+    : `the account has the letter ${letter}, not a player's letter (A-F): it does not play (run Install-TownBots again)`;
 }
 
 /** The parts of one rules step. */
@@ -78,6 +82,14 @@ export interface RulesStepParts {
   views: Pick<MoverViews, 'step'>;
   /** What the step played, to the views and the listeners. */
   take(): void;
+}
+
+/** A player renamed (QUERYSETPLAYERNAME's answer): its mover in view gets the new name (`WorldScreen.renamePlayer`). */
+export function renameMover(world: Pick<WorldState, 'moverByPlayerId'>, playerId: number, name: string): void {
+  const mover = world.moverByPlayerId(playerId);
+  if (mover === undefined || mover.added.player === undefined) return;
+  mover.name = name;
+  mover.added.player.name = name;
 }
 
 /**
@@ -371,6 +383,11 @@ export class BotBody implements BotParts {
       }
       if (value.type === 'queryGetDestObj') {
         this.attack_?.onQueryGetDestObj(value.fromId);
+        continue;
+      }
+      if (value.type === 'setPlayerName') {
+        renameMover(world, value.playerId, value.name);
+        if (!joining) this.onMessage?.(objectId, value);
         continue;
       }
       if (world.movers.has(objectId)) {

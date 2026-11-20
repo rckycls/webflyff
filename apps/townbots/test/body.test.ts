@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { letterRefusal, rulesStep } from '../src/body';
+import { letterRefusal, renameMover, rulesStep } from '../src/body';
+
+describe('renameMover', () => {
+  it("gives a renamed player's mover its new name, as WorldScreen.renamePlayer does", () => {
+    const player = { kind: 'player', name: 'Abcd', added: { player: { playerId: 7, name: 'Abcd' } } };
+    const world = { moverByPlayerId: (id: number) => (id === 7 ? player : undefined) };
+    renameMover(world as never, 7, 'ZorbyTrel');
+    expect(player.name).toBe('ZorbyTrel');
+    expect(player.added.player.name).toBe('ZorbyTrel');
+    expect(() => renameMover(world as never, 8, 'Nobody')).not.toThrow();
+  });
+});
 
 describe('rulesStep', () => {
   it('runs as WorldScreen.step: the role (Auto Play) before the attack loop, which gets the clock (a wand\'s shot)', () => {
@@ -18,11 +29,12 @@ describe('rulesStep', () => {
 });
 
 describe('letterRefusal', () => {
-  it('lets a town bot (D) play, and a GM (P) only in the setup', () => {
-    expect(letterRefusal(0x44, false)).toBeUndefined();
+  it('lets a bot play with a player letter (A-F: the VIP ones, the bot letter D, a plain F), a GM (P) only in the setup', () => {
+    for (const letter of 'ABCDEF') expect(letterRefusal(letter.charCodeAt(0), false)).toBeUndefined();
     expect(letterRefusal(0x50, true)).toBeUndefined();
     expect(letterRefusal(0x50, false)).toMatch(/letter P/);
-    expect(letterRefusal(0x46, false)).toMatch(/letter F/);
+    for (const letter of 'GHLOZ') expect(letterRefusal(letter.charCodeAt(0), false)).toMatch(new RegExp(`letter ${letter}`));
     expect(letterRefusal(0x44, true)).toMatch(/setup/);
+    expect(letterRefusal(0x45, true)).toMatch(/setup/);
   });
 });

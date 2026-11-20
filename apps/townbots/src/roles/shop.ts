@@ -1,5 +1,5 @@
 // A personal shop: on a free shop spot in town, the bot registers what it holds of the stock list, at the list's price
-// (the Flaris NPC's), and opens with a friendly title. Nothing outside the list is ever sold, and nothing is bought.
+// (an NPC's, as the settings give it), and opens with a title from the settings. Nothing outside the list is ever sold, and nothing is bought.
 // Sold out: the shop closes and the role is dropped until a refill; at the end of its time it just closes.
 import type { Vec3 } from '@flyffweb/protocol';
 import { TownWalk } from './route';

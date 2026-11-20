@@ -15,6 +15,13 @@ const characterJoins = (body: string): string[] =>
   // the ON line and the lines of its condition that follow (each starting with AND)
   [...body.matchAll(/INNER JOIN dbo\.CHARACTER_TBL c ON [^\n]*(?:\n\s+AND [^\n]*)*/g)].map((m) => m[0]);
 
+it("the website's players online are every character in a world, none left out (owner 2026-11-21)", () => {
+  const count = procedure('usp_WebOnlineCount');
+  expect(count).toMatch(/SELECT COUNT\(\*\) AS players FROM dbo\.CHARACTER_TBL c\s+WHERE c\.MultiServer > 0\s*$/);
+  // in the statements (a comment may name the panel's list)
+  expect(sql.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n')).not.toContain('WEB_NOT_COUNTED');
+});
+
 it('the player ranking and the weekly MVP skip deleted characters (isblock D, null-safe)', () => {
   for (const name of ['usp_WebSiegeRankingPlayer', 'usp_WebSiegeWeekly']) {
     const joins = characterJoins(procedure(name));

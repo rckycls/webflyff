@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { AfkRole, UpgradeRole, WanderRole } from '../src/roles/town';
 import { fakeIo, item } from './fakeIo';
 
-const TOWN: [number, number, number][] = [[1, 0, 1], [2, 0, 2], [3, 0, 3]];
+const TOWN: [number, number, number][] = [[1, 0, 1], [20, 0, 20], [40, 0, 40]];
 const MIN = 60_000;
 
 describe('WanderRole', () => {
-  it('walks between town points, stands, sometimes sits or plays a motion, until its time is up', () => {
+  it('walks between town points, stands, sometimes plays a motion or takes combat stance, until its time is up', () => {
     let r = 0;
     const randoms = [0.1, 0.1, 0.9, 0.05, 0.5, 0.95, 0.3];
     const io = fakeIo(() => randoms[r++ % randoms.length]!);
@@ -20,8 +20,7 @@ describe('WanderRole', () => {
     for (let i = 0; i < 3 && status === 'running'; i++) status = role.tick();
     expect(status).toBe('done');
     expect(io.calls.some((c) => c.startsWith('walk'))).toBe(true);
-    expect(io.calls.some((c) => c === 'sit' || c.startsWith('motion'))).toBe(true);
-    expect(io.isSitting).toBe(false); // stands up before it ends
+    expect(io.calls.some((c) => c === 'combat' || c.startsWith('motion'))).toBe(true);
   });
 });
 
@@ -34,7 +33,7 @@ describe('AfkRole', () => {
       role.tick();
     }
     expect(io.calls.filter((c) => c.startsWith('walk'))).toHaveLength(1);
-    expect(io.isSitting).toBe(true);
+    expect(io.isCombat).toBe(true);
   });
 });
 
@@ -82,7 +81,10 @@ describe('town walks that get stuck', () => {
     io.stuck = true;
     const role = new AfkRole([[50, 0, 50], [60, 0, 60]], io, () => 60 * MIN);
     tickFor(role, io, 0, 25);
-    expect(io.isSitting).toBe(true);
+    expect(io.isCombat).toBe(true);
+    const walks = io.calls.filter((c) => c.startsWith('walk')).length;
+    tickFor(role, io, 30_000, 60);
+    expect(io.calls.filter((c) => c.startsWith('walk')).length).toBe(walks);
   });
 
   it('an upgrader that cannot reach the NPC gives the role up', () => {

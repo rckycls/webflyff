@@ -9,7 +9,7 @@ export function townNodes(places: Pick<Places, 'town' | 'lodestar' | 'upgradeNpc
   const nodes = new Map<string, Vec3>();
   places.town.forEach((p, i) => nodes.set(`town[${i}]`, p));
   nodes.set('lodestar', places.lodestar);
-  nodes.set('upgradeNpc', places.upgradeNpc.pos);
+  if (places.upgradeNpc !== undefined) nodes.set('upgradeNpc', places.upgradeNpc.pos);
   places.shopSpots.forEach((p, i) => nodes.set(`shopSpots[${i}]`, p));
   for (const [name, points] of Object.entries(places.routes)) nodes.set(`routes.${name}[0]`, points[0]!);
   return nodes;

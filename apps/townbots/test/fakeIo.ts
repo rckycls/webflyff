@@ -1,5 +1,6 @@
 // A bot's world as the roles see it, made of plain fields a test sets: no server, no rules steps.
 import type { InventoryItem, Vec3 } from '@flyffweb/protocol';
+import { PlaceBook } from '../src/roles/places';
 import type { FarmControl, RoleIo } from '../src/roles/types';
 import type { Role } from '../src/settings';
 
@@ -7,7 +8,9 @@ export interface FakeIo extends RoleIo {
   t: number;
   pos: Vec3;
   isDead: boolean;
-  isSitting: boolean;
+  isCombat: boolean;
+  /** The region's held places: this bot is `me` in it. */
+  places: PlaceBook;
   dest: Vec3 | null;
   items: Map<number, InventoryItem>;
   calls: string[];
@@ -19,7 +22,7 @@ export interface FakeIo extends RoleIo {
 
 export function fakeIo(random: () => number = () => 0.5): FakeIo {
   const io: FakeIo = {
-    t: 0, pos: [0, 0, 0], isDead: false, isSitting: false, dest: null, items: new Map(), calls: [], dropped: [],
+    t: 0, pos: [0, 0, 0], isDead: false, isCombat: false, places: new PlaceBook(), dest: null, items: new Map(), calls: [], dropped: [],
     playersNear: false, stuck: false,
     now: () => io.t,
     random,
@@ -33,9 +36,9 @@ export function fakeIo(random: () => number = () => 0.5): FakeIo {
       if (!io.stuck) io.pos = [...pos] as Vec3;
     },
     pathTo: (target) => [target],
-    sitting: () => io.isSitting,
-    sit: () => { io.calls.push('sit'); io.isSitting = true; },
-    stand: () => { io.calls.push('stand'); io.isSitting = false; },
+    pickPlace: (candidates) => { io.calls.push('pick'); return io.places.take('me', candidates, random); },
+    combatStance: () => { if (!io.isCombat) { io.calls.push('combat'); io.isCombat = true; } },
+    peaceStance: () => { if (io.isCombat) { io.calls.push('peace'); io.isCombat = false; } },
     motion: (id) => io.calls.push(`motion ${id}`),
     revive: () => io.calls.push('revive'),
     bag: () => io.items,

@@ -28,9 +28,12 @@ export interface RoleIo {
   walkTo(pos: Vec3): void;
   /** The places to walk through in town to reach `target` (`TownGraph.path`), ending with `target`. */
   pathTo(target: Vec3): Vec3[];
-  sitting(): boolean;
-  sit(): void;
-  stand(): void;
+  /** A free one of the region's `candidates` (no other bot's place within 8 m), now this bot's; undefined when none is. */
+  pickPlace(candidates: readonly Vec3[]): Vec3 | undefined;
+  /** The Motion window's Combat Stance, when the bot is not in it. */
+  combatStance(): void;
+  /** Out of combat stance, when the bot is in it. */
+  peaceStance(): void;
   /** A motion of the Motion window, by its `MOT_BASE_*` id. */
   motion(id: number): void;
   /** REVIVAL_TO_LODESTAR, as the revive window's button. */

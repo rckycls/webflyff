@@ -1,6 +1,7 @@
-// Who does what: about so many bots in each role at any moment (the settings' targets), each for a random while, then
-// another role. Veterans never farm (nothing in their fields fits them). A bot that can no longer do a role (out of
-// upgrade stones or shop stock) has it dropped until the program starts again after a refill.
+// Who does what in one region: about so many of its bots in each role at any moment (the region's targets), each for a
+// random while, then another role. Heroes never farm (nothing in any field fits level 121-129); a role whose target is
+// 0 is never given (a region with no shop spots has no shops). A bot that can no longer do a role (out of upgrade
+// stones or shop stock) has it dropped until the program starts again after a refill.
 import { ROLES } from './settings';
 import type { Group, Role } from './settings';
 
@@ -24,8 +25,8 @@ export class RolePlanner {
   ) {}
 
   /**
-   * A role for a bot coming into the world. Farming is the role only rookies and first jobs can take, so they fill it
-   * first; otherwise the eligible role furthest below its target (ties: random).
+   * A role for a bot coming into the world. Farming is the one role heroes cannot take, so the others fill it first;
+   * otherwise the eligible role furthest below its target (ties: random).
    */
   assign(bot: string, group: Group): Role {
     this.release(bot);
@@ -79,7 +80,7 @@ export class RolePlanner {
 
   private eligible(bot: string, group: Group): Role[] {
     const dropped = this.dropped.get(bot);
-    const roles = ROLES.filter((role) => !(group === 'veteran' && role === 'farming') && dropped?.has(role) !== true);
+    const roles = ROLES.filter((role) => this.targets[role] > 0 && !(group === 'hero' && role === 'farming') && dropped?.has(role) !== true);
     // a bot that can do nothing else still wanders
     return roles.length > 0 ? roles : ['wandering'];
   }
