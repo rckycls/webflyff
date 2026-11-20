@@ -5,7 +5,7 @@ import type { RefusalSends } from '../src/refusals';
 
 const SIDE = { level: 10, job: 0, sex: 0 };
 
-function setup() {
+function setup(random: () => number = () => 0) {
   const calls: string[] = [];
   const sends: RefusalSends = {
     partyNo: (leaderId, memberId) => calls.push(`partyNo ${leaderId} ${memberId}`),
@@ -16,7 +16,7 @@ function setup() {
     whisper: (name, text) => calls.push(`whisper ${name} ${text}`),
   };
   let now = 0;
-  const refusals = new Refusals(sends, ['hi there'], () => 0, () => now, {
+  const refusals = new Refusals(sends, ['hi there'], random, () => now, {
     ownName: () => 'Abcd',
     isBot: (name) => name.toLowerCase() === 'efgh',
     ofObject: (id) => ({ 7: 'Player7', 8: 'Efgh' } as Record<number, string>)[id],
@@ -56,7 +56,7 @@ describe('Refusals', () => {
     expect(calls).toEqual(['whisper Player7 hi there']);
   });
 
-  it('spam gets refusals but one line a minute', () => {
+  it('spam gets refusals but a line only every 5 to 10 minutes', () => {
     const { calls, refusals, setNow } = setup();
     for (let i = 0; i < 5; i++) {
       setNow(i * 1000);
@@ -65,8 +65,22 @@ describe('Refusals', () => {
     }
     expect(calls.filter((c) => c.startsWith('partyNo'))).toHaveLength(5);
     expect(calls.filter((c) => c.startsWith('whisper'))).toHaveLength(1);
-    setNow(61_000);
+    setNow(299_000);
     refusals.onMessage(0, whisper('player7'));
+    expect(calls.filter((c) => c.startsWith('whisper'))).toHaveLength(1);
+    setNow(300_000);
+    refusals.onMessage(0, whisper('player7'));
+    expect(calls.filter((c) => c.startsWith('whisper'))).toHaveLength(2);
+  });
+
+  it('waits up to 10 minutes, at random', () => {
+    const { calls, refusals, setNow } = setup(() => 0.999);
+    refusals.onMessage(0, whisper('Player7'));
+    setNow(598_000);
+    refusals.onMessage(0, whisper('Player7'));
+    expect(calls.filter((c) => c.startsWith('whisper'))).toHaveLength(1);
+    setNow(600_000);
+    refusals.onMessage(0, whisper('Player7'));
     expect(calls.filter((c) => c.startsWith('whisper'))).toHaveLength(2);
   });
 
