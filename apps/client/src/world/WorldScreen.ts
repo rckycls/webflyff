@@ -51,6 +51,7 @@ import { askBeforeLeaving } from './askBeforeLeaving';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
 import { AttackLoop, attackAble, objRadius } from './combat/attackLoop';
+import { nearestAllowed } from './combat/attackNearest';
 import { sightBlocked } from './combat/lineOfSight';
 import { bagIsFull } from './autoplay/bag';
 import { autoPlayLimit } from './autoplay/usageLimit';
@@ -2252,7 +2253,17 @@ export class WorldScreen {
     this.attackButton = new AttackButton((time) => {
       // Piece 7 M5: in the air the button is held to attack (ControlFlying's m_bLButtonDown)
       if (this.world?.self()?.act.isFlying() === true) this.flightAttack = true;
-      else attackLoop.attackButtonDown(time);
+      else {
+        // custom (owner 2026-11-20): nothing selected, outside town: the nearest monster, tapped as a finger would
+        // (the press's other effects too: Auto Play's "you took control", the auto-run's end), then attacked
+        const nearest = this.nearestForButton(true);
+        if (nearest !== null) {
+          this.autoPlay?.onEvent({ kind: 'manualControl' });
+          this.autoRun?.stop();
+          attackLoop.tap(nearest, time);
+        }
+        attackLoop.attackButtonDown(time);
+      }
     }, doc, {
       onRelease: (time) => {
         if (this.flightAttack) this.flightAttack = false;
@@ -4442,7 +4453,10 @@ this.follow(world, stage);
       refitWindows(this.element.ownerDocument);
       this.buffStatus?.refit(); // 2026-11-05: a moved buff display stays on the screen too
     }
-    this.attackButton!.update(loop.canAttackFocus);
+    // custom (owner 2026-11-20): with nothing selected outside town it is enabled while a monster is there to take
+    // (the obstacle check is left to the press); a hidden button (no touch screen) asks nothing
+    this.attackButton!.update(loop.canAttackFocus ||
+      (!this.attackButton!.element.hidden && this.nearestForButton(false) !== null));
     const ownMover = this.world?.self();
     this.jumpButton!.update(ownMover !== undefined && !ownMover.act.isDie() &&
       (ownMover.act.state & (ObjSta.JUMP_ALL | ObjSta.DMG_ALL)) === 0 &&
@@ -4806,6 +4820,23 @@ this.follow(world, stage);
       if (mover !== undefined && !mover.isSelf) ids.add(mover.objectId);
     }
     return ids;
+  }
+
+  /**
+   * custom (owner 2026-11-20): the monster the phone Attack button takes with nothing selected outside town
+   * (combat/attackNearest.ts), or null: none in reach, or the button is as before (something selected, dead, flying, in
+   * town). `lineCheck` prefers a monster with no object on the way (the press); without it the enabled check is cheaper.
+   */
+  private nearestForButton(lineCheck: boolean): number | null {
+    const world = this.world, self = world?.self(), play = this.autoPlay;
+    if (world === undefined || self === undefined || play === undefined) return null;
+    const id = this.focus?.targetId ?? null;
+    const focused = id === null ? undefined : world.movers.get(id);
+    const allowed = nearestAllowed({
+      selected: focused !== undefined && !isDie(focused), dead: self.act.isDie(), flying: self.act.isFlying(),
+      worldId: this.worldId, pos: self.act.body.pos,
+    });
+    return allowed ? play.nearestMonster(lineCheck)?.objectId ?? null : null;
   }
 
   /** custom (owner 2026-11-15): the bag's potions, refreshers, food and pills, one entry per item, for the Potions tab. */

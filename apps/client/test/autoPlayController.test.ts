@@ -928,3 +928,37 @@ describe('AutoPlay controller: owner bugs of 2026-11-18', () => {
     expect(start.state.walks.length).toBeGreaterThan(0);
   });
 });
+
+describe('AutoPlay controller: the phone Attack button\'s nearest monster (custom, owner 2026-11-20)', () => {
+  it('the nearest monster round the player, by the bot\'s hooks, with the bot off', () => {
+    const { state, hooks } = world();
+    state.selfPos[0] = 100; // far from where any Start was pressed: the button looks round the player
+    state.mobs = [mob(20, 109, 0), mob(21, 104, 0), mob(22, 130, 0)];
+    const play = new AutoPlay(hooks, defaultSettings());
+    expect(play.farm).toBe('off');
+    expect(play.nearestMonster(true)?.objectId).toBe(21);
+    state.mobs = [mob(22, 130, 0)];
+    expect(play.nearestMonster(true)).toBeNull();
+  });
+
+  it('skips a monster another player hit in the last 10 s, seen while the bot was off; our own hits do not count', () => {
+    const { state, hooks } = world();
+    state.mobs = [mob(20, 3, 0), mob(21, 8, 0)];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.onEvent({ kind: 'hit', attackerId: US, victimId: 20 });
+    expect(play.nearestMonster(true)?.objectId).toBe(20);
+    play.onEvent({ kind: 'hit', attackerId: 950, victimId: 20 });
+    expect(play.nearestMonster(true)?.objectId).toBe(21);
+    state.now += 10_001;
+    expect(play.nearestMonster(true)?.objectId).toBe(20);
+  });
+
+  it('the obstacle check only with lineCheck (the press), not for the enabled state', () => {
+    const { state, hooks } = world();
+    state.mobs = [mob(20, 3, 0), mob(21, 8, 0)];
+    state.blockedIds.add(20);
+    const play = new AutoPlay(hooks, defaultSettings());
+    expect(play.nearestMonster(true)?.objectId).toBe(21);
+    expect(play.nearestMonster(false)?.objectId).toBe(20);
+  });
+});

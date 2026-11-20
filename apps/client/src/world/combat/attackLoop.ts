@@ -539,6 +539,16 @@ export class AttackLoop {
   }
 
   /**
+   * custom (owner 2026-11-20): a tap on the mover `objectId` at `now`, its press let go at once with no shot: the phone
+   * Attack button's nearest monster (combat/attackNearest.ts) selected as a finger on it would, before the button's own
+   * press (`attackButtonDown`) attacks it.
+   */
+  tap(objectId: number, now: number): void {
+    this.onMoverPressed(objectId, now, false);
+    this.onReleased();
+  }
+
+  /**
    * Piece 7 M2: what `CMover::RenderGauge` draws over the own head (`WndWorld.cpp:930-1000`), or null for nothing: a
    * wand or a bow in the hand, a mover focused and the player alive. Full (4) in the lock-out after an automatic shot,
    * 0 while no press is held on the mover, else the charge reached at `now`.

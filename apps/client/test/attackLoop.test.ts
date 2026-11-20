@@ -1508,3 +1508,21 @@ describe('AttackLoop: another player in the Arena (2026-11-10; IsAttackAble, Mov
     expect(r.loop.canAttackFocus).toBe(true);
   });
 });
+
+describe('AttackLoop: the phone Attack button\'s nearest monster (custom, owner 2026-11-20)', () => {
+  it('tap then the button: selected as a finger would (SETTARGET, the mark), then attacked as the button does', () => {
+    const r = rig();
+    expect(r.focus.targetId).toBeNull();
+    r.loop.tap(MONSTER_ID, r.now());
+    expect(r.focus.targetId).toBe(MONSTER_ID);
+    expect(r.targets).toEqual([[MONSTER_ID, 2]]);
+    expect(r.loop.renderTargetId).toBe(MONSTER_ID);
+    expect(r.loop.autoAttack).toBe(false);
+    expect(r.loop.selectsTarget).toBe(false); // let go at once: no held press
+    r.loop.attackButtonDown(r.now());
+    r.loop.attackButtonUp(r.now());
+    expect(r.loop.autoAttack).toBe(true);
+    r.until(() => r.melee().length > 0);
+    expect(r.kinds()).toEqual([`destObj ${MONSTER_ID}`, `ATK1 ${MONSTER_ID}`]);
+  });
+});
