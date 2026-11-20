@@ -56,17 +56,21 @@ export interface Shared {
 /** A world session that ended before the bot was in it. */
 export class EndedBeforeEntering extends Error {}
 
-/** The account letters: a town bot plays as D; the setup runs as P (GM) and nothing else. */
-const LETTER_TOWNBOT = 0x44, LETTER_SETUP = 0x50;
+/**
+ * The account letters: a town bot plays with a player's letter, A to F (the VIP letters, the bot letter D, a plain F;
+ * the World knows a town bot by its letter D or its account name); the setup runs as P (GM) and nothing else.
+ */
+const LETTER_PLAY_FIRST = 0x41, LETTER_PLAY_LAST = 0x46, LETTER_SETUP = 0x50;
 
 /**
  * Why the bot must not play with the letter its own ADD_OBJ carries (`player.authorization`), or undefined: in the setup
- * only P, otherwise only D. A bot left GM by a setup that was cut off never plays as an administrator.
+ * only P, otherwise only A-F. A bot left GM by a setup that was cut off never plays as an administrator.
  */
 export function letterRefusal(authorization: number, setup: boolean): string | undefined {
   const letter = String.fromCharCode(authorization);
   if (setup) return authorization === LETTER_SETUP ? undefined : `the setup needs the GM letter P, but the account has the letter ${letter}`;
-  return authorization === LETTER_TOWNBOT ? undefined : `the account has the letter ${letter}, not the bot letter D: it does not play (run Install-TownBots again)`;
+  return authorization >= LETTER_PLAY_FIRST && authorization <= LETTER_PLAY_LAST ? undefined
+    : `the account has the letter ${letter}, not a player's letter (A-F): it does not play (run Install-TownBots again)`;
 }
 
 /** The parts of one rules step. */

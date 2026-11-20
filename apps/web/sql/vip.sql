@@ -150,6 +150,12 @@ IF OBJECT_ID(N'dbo.WEB_VIP_ADOPTED', N'U') IS NULL
 		seenAt datetime2(0) NOT NULL CONSTRAINT DF_WEB_VIP_ADOPTED_seenAt DEFAULT SYSUTCDATETIME()
 	)
 GO
+-- 2026-11-21: the accounts that are not players (an install script's own, filled by it): the VIP job leaves them alone
+-- (no adopting, no letter change, no gift box). The table of the same name in CHARACTER_01_DBF leaves them out of the
+-- player counts (web-login.sql, admin-login.sql).
+IF OBJECT_ID(N'dbo.WEB_NOT_COUNTED', N'U') IS NULL
+	CREATE TABLE dbo.WEB_NOT_COUNTED (account varchar(32) NOT NULL CONSTRAINT PK_WEB_NOT_COUNTED PRIMARY KEY)
+GO
 -- The starting boxes, put in only while the table is empty (the owner changes them in the panel's VIP tab): Remantis
 -- Laccotte (HP, 10206), Refresher Hold (MP, 10207), Vital Drink X (FP, 10208), Town Blinkwing (4805) and Scroll of
 -- Resurrection (10431), all stacking to 99.
@@ -594,20 +600,22 @@ COMMIT
 SELECT 1 AS result, @level AS level, CONVERT(varchar(19), @ends, 126) + 'Z' AS endsAt
 GO
 
--- The accounts whose own letter is a VIP letter (A, B, C, E, compared as bytes), for the VIP job's adoption step.
+-- The accounts whose own letter is a VIP letter (A, B, C, E, compared as bytes), for the VIP job's adoption step; not
+-- those in WEB_NOT_COUNTED (2026-11-21: accounts that are not players, which the VIP job leaves alone).
 IF OBJECT_ID(N'dbo.usp_AdminVipLetterAccounts', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipLetterAccounts
 GO
 CREATE PROCEDURE dbo.usp_AdminVipLetterAccounts
 AS
 SET NOCOUNT ON
-SELECT account, m_chLoginAuthority AS letter FROM dbo.ACCOUNT_TBL_DETAIL
-WHERE CAST(m_chLoginAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
+SELECT d.account, d.m_chLoginAuthority AS letter FROM dbo.ACCOUNT_TBL_DETAIL d
+WHERE CAST(d.m_chLoginAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
+	AND NOT EXISTS (SELECT 1 FROM dbo.WEB_NOT_COUNTED n WHERE n.account = d.account)
 GO
 
 -- A VIP letter set by hand before the VIP perks (an account or a character with one, and no WEB_VIP row at all)
 -- becomes a 30-day VIP at that level, with no gift box, in the audit log as vip-job. Once per account, ever: the account
 -- is marked in WEB_VIP_ADOPTED whatever the answer. 1 adopted, 0 the account has a row (paid, given or ended: the letter
--- then follows that row) or was seen before.
+-- then follows that row) or was seen before. Never an account in WEB_NOT_COUNTED (not a player: 0, and not marked).
 IF OBJECT_ID(N'dbo.usp_AdminVipAdopt', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipAdopt
 GO
 CREATE PROCEDURE dbo.usp_AdminVipAdopt
@@ -616,7 +624,7 @@ AS
 SET NOCOUNT ON
 SET XACT_ABORT ON
 DECLARE @now datetime2(0)
-IF @level IS NULL OR @level NOT BETWEEN 1 AND 4
+IF @level IS NULL OR @level NOT BETWEEN 1 AND 4 OR EXISTS (SELECT 1 FROM dbo.WEB_NOT_COUNTED n WHERE n.account = @account)
 BEGIN
 	SELECT CAST(0 AS bit) AS adopted
 	RETURN
@@ -640,7 +648,8 @@ COMMIT
 SELECT CAST(0 AS bit) AS adopted
 GO
 
--- Puts every player or VIP account letter right: the live WEB_VIP level's letter, else F. Staff letters never change.
+-- Puts every player or VIP account letter right: the live WEB_VIP level's letter, else F. Staff letters never change,
+-- nor those of the accounts in WEB_NOT_COUNTED (not players: their letters are their install's).
 -- Each change is one audit row (vip-job); the changes come back as account, before, after.
 IF OBJECT_ID(N'dbo.usp_AdminVipSyncLetters', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipSyncLetters
 GO
@@ -657,8 +666,9 @@ BEGIN TRANSACTION
 		CASE (SELECT v.level FROM dbo.WEB_VIP v WHERE v.account = d.account AND v.endsAt > @now)
 			WHEN 1 THEN 'A' WHEN 2 THEN 'B' WHEN 3 THEN 'C' WHEN 4 THEN 'E' ELSE 'F' END AS letter
 	FROM dbo.ACCOUNT_TBL_DETAIL d
-	WHERE CAST(d.m_chLoginAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
-		OR (CAST(d.m_chLoginAuthority AS binary(1)) IN (0x46) AND EXISTS (SELECT 1 FROM dbo.WEB_VIP v WHERE v.account = d.account AND v.endsAt > @now))
+	WHERE (CAST(d.m_chLoginAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
+		OR (CAST(d.m_chLoginAuthority AS binary(1)) IN (0x46) AND EXISTS (SELECT 1 FROM dbo.WEB_VIP v WHERE v.account = d.account AND v.endsAt > @now)))
+		AND NOT EXISTS (SELECT 1 FROM dbo.WEB_NOT_COUNTED n WHERE n.account = d.account)
 )
 UPDATE wanted SET m_chLoginAuthority = letter
 OUTPUT inserted.account, deleted.m_chLoginAuthority, inserted.m_chLoginAuthority INTO @changes (account, before, after)
@@ -670,17 +680,18 @@ SELECT account, before, after FROM @changes
 GO
 
 -- The gift boxes not sent yet, oldest first, after the box @afterId (0: from the start): the job reads them a page at a
--- time, so boxes that wait never hold back the ones behind them.
+-- time, so boxes that wait never hold back the ones behind them. A box for an account in WEB_NOT_COUNTED never goes.
 IF OBJECT_ID(N'dbo.usp_AdminVipGiftsPending', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipGiftsPending
 GO
 CREATE PROCEDURE dbo.usp_AdminVipGiftsPending
 	@max int, @afterId int = 0
 AS
 SET NOCOUNT ON
-SELECT TOP (@max) id, account, level, requestId, CONVERT(varchar(19), createdAt, 126) + 'Z' AS createdAt
-FROM dbo.WEB_VIP_GIFT
-WHERE sentAt IS NULL AND id > @afterId
-ORDER BY id
+SELECT TOP (@max) g.id, g.account, g.level, g.requestId, CONVERT(varchar(19), g.createdAt, 126) + 'Z' AS createdAt
+FROM dbo.WEB_VIP_GIFT g
+WHERE g.sentAt IS NULL AND g.id > @afterId
+	AND NOT EXISTS (SELECT 1 FROM dbo.WEB_NOT_COUNTED n WHERE n.account = g.account)
+ORDER BY g.id
 GO
 
 -- Ends an account's live VIP now (the final review, 2026-11-19: a wrongly approved payment, say): its end time becomes
@@ -1172,26 +1183,35 @@ IF OBJECT_ID(N'dbo.WEB_VIP_GIFT_SENT', N'U') IS NULL
 		sentAt datetime2(0) NOT NULL CONSTRAINT DF_WEB_VIP_GIFT_SENT_sentAt DEFAULT SYSUTCDATETIME()
 	)
 GO
+-- The accounts that are not players (as web-login.sql and admin-login.sql make it): their characters are left alone.
+IF OBJECT_ID(N'dbo.WEB_NOT_COUNTED', N'U') IS NULL
+	CREATE TABLE dbo.WEB_NOT_COUNTED (account varchar(32) NOT NULL CONSTRAINT PK_WEB_NOT_COUNTED PRIMARY KEY)
+GO
 
--- The server 01 characters whose own letter is a VIP letter (A, B, C, E, compared as bytes), with their account.
+-- The server 01 characters whose own letter is a VIP letter (A, B, C, E, compared as bytes), with their account; not
+-- those of the accounts in WEB_NOT_COUNTED.
 IF OBJECT_ID(N'dbo.usp_AdminVipCharacterLetters', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipCharacterLetters
 GO
 CREATE PROCEDURE dbo.usp_AdminVipCharacterLetters
 AS
 SET NOCOUNT ON
-SELECT account, m_chAuthority AS letter FROM dbo.CHARACTER_TBL
-WHERE serverindex = '01' AND CAST(m_chAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
+SELECT c.account, c.m_chAuthority AS letter FROM dbo.CHARACTER_TBL c
+WHERE c.serverindex = '01' AND CAST(c.m_chAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
+	AND NOT EXISTS (SELECT 1 FROM dbo.WEB_NOT_COUNTED n WHERE n.account = c.account)
 GO
 
 -- Puts every server 01 character's VIP letter back to F: VIP is the account's now (a character's own VIP letter would
--- win over its account's at entry, DbManagerJoin.cpp:237). The count changed comes back.
+-- win over its account's at entry, DbManagerJoin.cpp:237). Not those of the accounts in WEB_NOT_COUNTED. The count
+-- changed comes back.
 IF OBJECT_ID(N'dbo.usp_AdminVipClearCharacterLetters', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipClearCharacterLetters
 GO
 CREATE PROCEDURE dbo.usp_AdminVipClearCharacterLetters
 AS
 SET NOCOUNT ON
-UPDATE dbo.CHARACTER_TBL SET m_chAuthority = 'F'
-WHERE serverindex = '01' AND CAST(m_chAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
+UPDATE c SET m_chAuthority = 'F'
+FROM dbo.CHARACTER_TBL c
+WHERE c.serverindex = '01' AND CAST(c.m_chAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
+	AND NOT EXISTS (SELECT 1 FROM dbo.WEB_NOT_COUNTED n WHERE n.account = c.account)
 SELECT @@ROWCOUNT AS changed
 GO
 

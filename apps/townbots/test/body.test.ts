@@ -18,11 +18,12 @@ describe('rulesStep', () => {
 });
 
 describe('letterRefusal', () => {
-  it('lets a town bot (D) play, and a GM (P) only in the setup', () => {
-    expect(letterRefusal(0x44, false)).toBeUndefined();
+  it('lets a bot play with a player letter (A-F: the VIP ones, the bot letter D, a plain F), a GM (P) only in the setup', () => {
+    for (const letter of 'ABCDEF') expect(letterRefusal(letter.charCodeAt(0), false)).toBeUndefined();
     expect(letterRefusal(0x50, true)).toBeUndefined();
     expect(letterRefusal(0x50, false)).toMatch(/letter P/);
-    expect(letterRefusal(0x46, false)).toMatch(/letter F/);
+    for (const letter of 'GHLOZ') expect(letterRefusal(letter.charCodeAt(0), false)).toMatch(new RegExp(`letter ${letter}`));
     expect(letterRefusal(0x44, true)).toMatch(/setup/);
+    expect(letterRefusal(0x45, true)).toMatch(/setup/);
   });
 });

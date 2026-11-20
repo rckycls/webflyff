@@ -111,7 +111,7 @@ it('lets the site read the latest gift', () => {
 });
 
 it('final review fixes: pages the pending gifts, ends a VIP, adopts once, and the sync takes no update lock first', () => {
-  expect(body('usp_AdminVipGiftsPending')).toContain('AND id > @afterId');
+  expect(body('usp_AdminVipGiftsPending')).toContain('AND g.id > @afterId');
   const end = body('usp_AdminVipEnd');
   expect(end).toContain(VIP_OR_PLAYER);
   expect(end).toContain("items = 'cancelled'");
@@ -120,4 +120,15 @@ it('final review fixes: pages the pending gifts, ends a VIP, adopts once, and th
   const adopt = body('usp_AdminVipAdopt');
   expect(adopt).toContain('IF NOT EXISTS (SELECT 1 FROM dbo.WEB_VIP_ADOPTED WITH (UPDLOCK, HOLDLOCK) WHERE account = @account)');
   expect(body('usp_AdminVipSyncLetters')).not.toContain('UPDLOCK');
+});
+
+it('leaves the accounts that are not players (WEB_NOT_COUNTED, made in both databases) out of the VIP job', () => {
+  const characters = sql.indexOf('USE [CHARACTER_01_DBF]');
+  const made = [...sql.matchAll(/IF OBJECT_ID\(N'dbo\.WEB_NOT_COUNTED', N'U'\) IS NULL\n\tCREATE TABLE dbo\.WEB_NOT_COUNTED \(account varchar\(32\) NOT NULL CONSTRAINT PK_WEB_NOT_COUNTED PRIMARY KEY\)/g)].map((m) => m.index!);
+  expect(made.filter((at) => at < characters)).toHaveLength(1);
+  expect(made.filter((at) => at > characters)).toHaveLength(1);
+  for (const name of ['usp_AdminVipLetterAccounts', 'usp_AdminVipAdopt', 'usp_AdminVipSyncLetters', 'usp_AdminVipGiftsPending',
+    'usp_AdminVipCharacterLetters', 'usp_AdminVipClearCharacterLetters']) {
+    expect(body(name), name).toMatch(/EXISTS \(SELECT 1 FROM dbo\.WEB_NOT_COUNTED n WHERE n\.account = /);
+  }
 });
