@@ -85,3 +85,132 @@ describe('camera gestures', () => {
     controls.dispose();
   });
 });
+
+describe("V15's mouse camera (2026-11-20, mouse-drag: WndWorld.cpp:7121-7613)", () => {
+  function mouse(target: EventTarget, type: string, x: number, y: number, button: number, buttons: number, time = 0) {
+    const event = Object.assign(new Event(type, { cancelable: true }), {
+      pointerId: 1, clientX: x, clientY: y, button, buttons, pointerType: 'mouse',
+    });
+    Object.defineProperty(event, 'timeStamp', { value: time });
+    target.dispatchEvent(event);
+  }
+  function rig(flying = false) {
+    const canvas = new EventTarget();
+    const keys = new EventTarget();
+    const calls: string[] = [];
+    const controls = new CameraControls(canvas as HTMLElement, (x, y) => calls.push(`rotate ${x} ${y}`), keys);
+    controls.view = {
+      turn: (yaw, up) => calls.push(`turn ${yaw.toFixed(2)} ${up.toFixed(2)}`),
+      wheel: (n) => calls.push(`wheel ${n}`),
+      page: (d) => calls.push(`page ${d}`),
+      behind: () => calls.push('behind'),
+      unlock: () => calls.push('unlock'),
+    };
+    controls.flying = () => flying;
+    return { canvas, keys, calls, controls };
+  }
+
+  it('a right drag turns the camera from the first pixel, 0.2 degrees a pixel', () => {
+    const { canvas, calls } = rig();
+    mouse(canvas, 'pointerdown', 100, 100, 2, 2);
+    mouse(canvas, 'pointermove', 101, 102, -1, 2);
+    mouse(canvas, 'pointermove', 111, 102, -1, 2);
+    expect(calls).toEqual(['turn 0.20 -0.40', 'turn 2.00 0.00']);
+    mouse(canvas, 'pointerup', 111, 102, 2, 0);
+    mouse(canvas, 'pointermove', 150, 102, -1, 0);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('a right press added to a held left (a chord) turns it too; the left alone never does', () => {
+    const { canvas, calls } = rig();
+    mouse(canvas, 'pointerdown', 100, 100, 0, 1);
+    mouse(canvas, 'pointermove', 120, 100, -1, 1);
+    expect(calls).toEqual([]);
+    mouse(canvas, 'pointermove', 120, 100, 2, 3);
+    mouse(canvas, 'pointermove', 125, 100, -1, 3);
+    expect(calls).toEqual(['turn 1.00 0.00']);
+  });
+
+  it('the arrows: 4 degrees round, 2 up and down a frame; PageUp / PageDown zoom', () => {
+    const { keys, calls, controls } = rig();
+    const key = (type: string, code: string) => keys.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), { code }));
+    key('keydown', 'ArrowLeft');
+    key('keydown', 'ArrowUp');
+    key('keydown', 'PageDown');
+    controls.step();
+    expect(calls).toEqual(['turn -4.00 2.00', 'page 1']);
+    key('keyup', 'ArrowLeft');
+    key('keyup', 'ArrowUp');
+    key('keyup', 'PageDown');
+    key('keydown', 'PageUp');
+    controls.zoomBlocked = () => true; // a piece of furniture being placed
+    controls.step();
+    expect(calls).toHaveLength(2);
+  });
+
+  it('the wheel: a mouse notch is one, small deltas add up to 100 a notch, and Ctrl (a laptop pinch) as it moves', () => {
+    const { canvas, calls } = rig();
+    const wheel = (deltaY: number, ctrlKey = false) =>
+      canvas.dispatchEvent(Object.assign(new Event('wheel', { cancelable: true }), { deltaY, deltaMode: 0, ctrlKey }));
+    wheel(100);
+    wheel(-120);
+    wheel(30);
+    wheel(30);
+    wheel(30);
+    expect(calls).toEqual(['wheel 1', 'wheel -1']);
+    wheel(30);
+    expect(calls).toEqual(['wheel 1', 'wheel -1', 'wheel 1']);
+    wheel(-50, true);
+    expect(calls.at(-1)).toBe('wheel -0.5');
+  });
+
+  it('a right double click on the ground puts the camera behind the character', () => {
+    const { canvas, calls } = rig();
+    mouse(canvas, 'pointerdown', 100, 100, 2, 2, 1000);
+    mouse(canvas, 'pointerup', 100, 100, 2, 0, 1050);
+    mouse(canvas, 'pointerdown', 101, 100, 2, 2, 1200);
+    expect(calls).toEqual(['behind']);
+  });
+
+  it('in the air: the right drag steers; let go, the camera goes back behind; the middle drag turns the camera', () => {
+    const { canvas, calls, controls } = rig(true);
+    const steered: number[][] = [];
+    controls.steer = (dx, dy) => { steered.push([dx, dy]); return true; };
+    mouse(canvas, 'pointerdown', 100, 100, 2, 2);
+    mouse(canvas, 'pointermove', 104, 102, -1, 2);
+    mouse(canvas, 'pointerup', 104, 102, 2, 0);
+    expect(steered).toEqual([[4, 2]]);
+    expect(calls).toEqual(['unlock']);
+    mouse(canvas, 'pointerdown', 100, 100, 1, 4);
+    mouse(canvas, 'pointermove', 110, 100, -1, 4);
+    mouse(canvas, 'pointerup', 110, 100, 1, 0);
+    expect(calls).toEqual(['unlock', 'turn 2.00 0.00', 'unlock']);
+  });
+
+  it('in the air a right double click steers without a button until the next one or the landing', () => {
+    let flying = true;
+    const canvas = new EventTarget();
+    const controls = new CameraControls(canvas as HTMLElement, () => {});
+    controls.flying = () => flying;
+    const steered: number[][] = [];
+    controls.steer = (dx, dy) => { steered.push([dx, dy]); return true; };
+    mouse(canvas, 'pointerdown', 100, 100, 2, 2, 1000);
+    mouse(canvas, 'pointerup', 100, 100, 2, 0, 1050);
+    mouse(canvas, 'pointerdown', 100, 100, 2, 2, 1200);
+    mouse(canvas, 'pointerup', 100, 100, 2, 0, 1250);
+    expect(controls.steeringMode).toBe(true);
+    mouse(canvas, 'pointermove', 103, 100, -1, 0);
+    expect(steered).toEqual([[3, 0]]);
+    flying = false;
+    controls.step();
+    expect(controls.steeringMode).toBe(false);
+  });
+
+  it("the phone's pinch zooms: fingers apart go in", () => {
+    const { canvas, calls } = rig();
+    pointer(canvas, 'pointerdown', 1, 100, 100);
+    pointer(canvas, 'pointerdown', 2, 140, 100);
+    pointer(canvas, 'pointermove', 2, 220, 100);
+    expect(calls).toEqual(['wheel 2']);
+  });
+});

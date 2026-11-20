@@ -1,7 +1,7 @@
 import { vipShopPrice } from '@flyffweb/protocol';
 import { createItemDetails, ownTooltipContext, ownVipLevel, positionItemDetails } from './itemDetails';
 import { COUNT_KEYS, CountPad, isPhone, numpad, textButton } from './numpad';
-import type { WebNpc } from '@flyffweb/formats';
+import type { WebItemProp, WebNpc } from '@flyffweb/formats';
 import type { InventoryItem } from '@flyffweb/protocol';
 import type { GameData } from '../gameData';
 import type { OwnState } from '../OwnState';
@@ -10,6 +10,15 @@ import { II_CHP_RED, chipCost, chipsFreeSlot, chipsHeld, isChipVendor } from './
 import type { UiArt } from './art';
 import { WindowFrame } from './frame';
 import { TAB_TILE, chosenTabTiles, tabStripTiles } from './tiles';
+import { ShopConfirmWindows, buyMost } from './shopConfirmWindows';
+import { setIconDrag } from './dragIcon';
+
+/** 2026-11-20 (mouse-drag-ui): the drag type of a shop's stock item (its object id), which the bag takes (`dropOnBag`). */
+export const SHOP_DRAG = 'application/x-flyff-shop';
+/** The drag type of a bag item (inventoryWindow.ts), which the shop takes to sell. */
+const BAG_DRAG = 'application/x-flyff-inventory';
+/** `IK3_QUEST` (Resource/defineItemkind.h:118). */
+const IK3_QUEST = 43;
 
 /** The shop's four stock tabs (`CWndShop`, MAX_VENDOR_INVENTORY_TAB). */
 const SHOP_TABS = 4;
@@ -22,6 +31,10 @@ interface ShopActions {
   sell(id: number, count: number): void;
   /** 2026-11-15: `g_WndMng.OpenMessageBox( text )`, an OK box; the shop's status line without it. */
   alert?(text: string): void;
+  /** 2026-11-20 (mouse-drag-ui): a line in the system messages (`PutString( prj.GetText( tid ) )`). */
+  say?(tid: string): void;
+  /** 2026-11-20 (mouse-drag-ui): a bag item a window holds (`IsUsingItem`): its sell box goes. */
+  held?(id: number): boolean;
 }
 type Selection = { kind: 'buy' | 'sell'; tab: number; id: number; itemId: number };
 
@@ -47,6 +60,8 @@ export class ShopWindow {
    * tap; the amount is − / + and a tap on it opens the game's number pad (Min, Max, Clear) in place of the phone keyboard.
    */
   private pad: CountPad | null = null;
+  /** 2026-11-20 (mouse-drag-ui): the drags' V15 boxes (shopConfirmWindows.ts), desktop only. */
+  private readonly confirms: ShopConfirmWindows;
   constructor(private readonly art: UiArt, private readonly data: GameData, private readonly own: () => OwnState | undefined,
     private readonly valid: (id: number) => boolean, private readonly actions: ShopActions, private readonly doc: Document = document) {
     this.frame = new WindowFrame('Shop', art, { width: 264, height: 400, mobileScale: 1 }, doc); this.frame.element.classList.add('hud-shop');
@@ -56,7 +71,18 @@ export class ShopWindow {
     const editPieces = [0, 2, 6, 8, 1, 7, 3, 5, 4].map(index => themeUrl(art, 'WndEditTile' + String(index).padStart(2, '0') + '.tga'));
     this.quantity.style.backgroundImage = editPieces.join(','); this.quantity.classList.add('classic-shop-edit');
     this.status = doc.createElement('p'); this.status.setAttribute('role', 'status'); this.status.className = 'shop-feedback'; this.status.hidden = true;
-    this.frame.onClose = () => { this.hideDetails(); if (this.id !== null) this.actions.close(); this.id = null; this.tabs = null; this.selection = null; this.pending = null; this.pad = null; this.onClosed?.(); };
+    this.frame.onClose = () => { this.hideDetails(); this.confirms.close(); if (this.id !== null) this.actions.close(); this.id = null; this.tabs = null; this.selection = null; this.pending = null; this.pad = null; this.onClosed?.(); };
+    this.confirms = new ShopConfirmWindows(art, doc);
+    // 2026-11-20 (mouse-drag-ui): a bag item dropped on the shop sells it (CWndShop::OnChildNotify's WIN_ITEMDROP)
+    this.frame.element.addEventListener('dragover', (event) => {
+      if (event.dataTransfer?.types.includes(BAG_DRAG) === true) event.preventDefault();
+    });
+    this.frame.element.addEventListener('drop', (event) => {
+      const data = event.dataTransfer?.getData(BAG_DRAG);
+      if (!data) return;
+      event.preventDefault();
+      this.dropSell(Number(data));
+    });
   }
   open(id: number, name: string, metadata?: WebNpc): void {
     if (!this.valid(id)) return;
@@ -92,6 +118,7 @@ export class ShopWindow {
     return true;
   }
   update(): void {
+    this.confirms.check();
     if (!this.check()) return;
     const own = this.own(); if (!own) return;
     const changed = own.inventoryRevision !== this.revision || own.gold !== this.gold;
@@ -190,6 +217,15 @@ export class ShopWindow {
       if (prop?.icon) { const icon = this.doc.createElement('img'); icon.src = this.art.url(prop.icon); icon.alt = ''; button.append(icon); }
       else button.textContent = '?';
       button.removeAttribute('title');
+      // 2026-11-20 (mouse-drag-ui): dragged into the bag it is bought (desktop; CWndInventory::OnChildNotify, WndField.cpp:1757-1807)
+      button.draggable = !isPhone(this.doc) && !button.disabled;
+      button.addEventListener('dragstart', (event) => {
+        if (isPhone(this.doc) || button.disabled) { event.preventDefault(); return; }
+        this.hideDetails();
+        event.dataTransfer?.setData(SHOP_DRAG, String(item.objectId));
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+        setIconDrag(event, button.querySelector('img'));
+      });
       button.addEventListener('mouseenter', () => this.showDetails(item, button));
       button.addEventListener('mouseleave', () => this.hideDetails());
       button.addEventListener('focus', () => this.showDetails(item, button));
@@ -282,6 +318,13 @@ export class ShopWindow {
     if (!this.check()) return;
     const own = this.own(), selection = this.selection, count = Number(this.quantity.value);
     if (!own?.inventory || !selection || selection.kind !== kind) { this.feedback(`Select an item to ${kind}.`); return; }
+    this.send(own, selection, count);
+  }
+
+  /** The request of `selection` x `count`, after the checks the shop makes itself (the buttons' and the drags' boxes'). */
+  private send(own: OwnState, selection: Selection, count: number): void {
+    const kind = selection.kind;
+    if (!own.inventory) return;
     if (this.pending !== null) { this.setStatus('Waiting for the previous request.'); return; }
     const item = kind === 'buy' ? this.tabs?.[selection.tab]?.find((item) => item.objectId === selection.id) : this.bag().find((item) => item.objectId === selection.id);
     const prop = item && this.data.itemProps.get(item.itemId);
@@ -310,11 +353,82 @@ export class ShopWindow {
       this.pending = performance.now(); this.setStatus('');
     } catch (error) { this.feedback(error instanceof Error ? error.message : 'Shop request failed.'); }
   }
+  /**
+   * 2026-11-20 (mouse-drag-ui): a stock item dropped in the bag (`CWndInventory::OnChildNotify`, WndField.cpp:1757-1807):
+   * a chip vendor's needs the chips of one, else TID_GAME_CANNT_BY_REDCHIP; a penya vendor's the penya of one, else
+   * TID_DIAG_0048; then CWndConfirmBuy, whose OK makes `CWndConfirmBuy::OnOK`'s checks (WndShop.cpp:556-656) and buys.
+   */
+  dropOnBag(objectId: number): void {
+    if (!this.check() || isPhone(this.doc)) return;
+    const own = this.own(), tab = this.tab;
+    const item = this.tabs?.[tab]?.find((entry) => entry.objectId === objectId);
+    const prop = item && this.data.itemProps.get(item.itemId);
+    if (!own?.inventory || !item || !prop) return;
+    const selection: Selection = { kind: 'buy', tab, id: item.objectId, itemId: item.itemId };
+    const chips = this.chipShop;
+    if (chips && chipsHeld(own.inventory.values()) - Math.max(0, chipCost(prop)) < 0) { this.alert('TID_GAME_CANNT_BY_REDCHIP'); return; }
+    if (!chips && own.gold - this.priceOf(selection) < 0) { this.alert('TID_DIAG_0048', 'Not enough penya.'); return; }
+    const layer = this.frame.element.parentElement;
+    if (layer === null) return;
+    const stockNow = (): InventoryItem | undefined => this.tabs?.[tab]?.find((entry) => entry.objectId === objectId && entry.itemId === item.itemId);
+    this.confirms.openBuy({
+      prop,
+      unit: () => (stockNow() === undefined ? 0 : this.priceOf(selection)),
+      stock: () => stockNow()?.count ?? 0,
+      ok: (count) => this.confirmedBuy(selection, prop, count),
+    }, layer);
+  }
+
+  /** `CWndConfirmBuy::OnOK` (WndShop.cpp:556-656): each refusal its box, else the buy. */
+  private confirmedBuy(selection: Selection, prop: WebItemProp, count: number): void {
+    const own = this.own();
+    if (!this.check() || !own?.inventory) return;
+    const stock = this.tabs?.[selection.tab]?.find((entry) => entry.objectId === selection.id && entry.itemId === selection.itemId);
+    const unit = stock === undefined ? 0 : this.priceOf(selection);
+    if (stock === undefined || stock.count < 1 || unit <= 0) { this.alert('TID_DIAG_0006', 'This item is no longer available.'); return; }
+    if (this.chipShop) {
+      if (count * unit > chipsHeld(own.inventory.values())) { this.alert('TID_GAME_CANNTBUY_REDCHIP'); return; }
+    } else if (count * unit > own.gold) { this.alert('TID_DIAG_0009', 'Not enough Penya.'); return; }
+    if (count < 1 || count > buyMost(prop)) { this.alert('TID_DIAG_0086', 'Please indicate the amount of items you want to sell/buy (1 ~ 99).'); return; }
+    if (count > stock.count) { this.alert('TID_DIAG_0087', 'Your demand exceeds item supply.'); return; }
+    this.send(own, selection, count);
+  }
+
+  /**
+   * 2026-11-20 (mouse-drag-ui): a bag item dropped on the shop (`CWndShop::OnChildNotify`, WndShop.cpp:851-925): a quest
+   * item is refused, a worn one says TID_GAME_EQUIPTRADE; a charged one (`IsCharged`) asks CWndWarning first; then
+   * CWndConfirmSell, filled with the whole stack, its OK the sale.
+   */
+  private dropSell(id: number): void {
+    if (!this.check() || isPhone(this.doc)) return;
+    const own = this.own(), item = own?.inventory?.get(id);
+    const prop = item && this.data.itemProps.get(item.itemId);
+    if (!own || !item || prop?.kind3 === IK3_QUEST) return;
+    if (own.equipmentObjectIds.includes(id)) { this.actions.say?.('TID_GAME_EQUIPTRADE'); return; }
+    const layer = this.frame.element.parentElement;
+    if (layer === null) return;
+    const selection: Selection = { kind: 'sell', tab: this.tab, id, itemId: item.itemId };
+    const now = (): InventoryItem | undefined => {
+      const current = this.own()?.inventory?.get(id);
+      return current?.itemId === item.itemId && this.own()?.equipmentObjectIds.includes(id) !== true ? current : undefined;
+    };
+    const charged = item.charged === 1 || (item.resistSMItemId ?? 0) !== 0;
+    this.confirms.openSell({
+      item: now,
+      inUse: () => this.actions.held?.(id) === true,
+      unit: () => this.priceOf(selection),
+      ok: (count) => {
+        const current = now(), fresh = this.own();
+        if (current !== undefined && fresh !== undefined && this.check()) this.send(fresh, selection, Math.min(count, current.count));
+      },
+    }, layer, charged);
+  }
+
   /** 2026-11-15: Neuz's `OpenMessageBox( prj.GetText( tid ) )`. */
-  private alert(tid: string): void {
-    const text = this.data.texts.get(tid)?.text ?? 'More Red Chips are needed.';
+  private alert(tid: string, fallback = 'More Red Chips are needed.'): void {
+    const text = this.data.texts.get(tid)?.text ?? fallback;
     if (this.actions.alert === undefined) this.feedback(text);
     else { this.setStatus(''); this.actions.alert(text); }
   }
-  dispose(): void { this.hideDetails(); this.frame.close(); this.frame.element.remove(); }
+  dispose(): void { this.hideDetails(); this.confirms.dispose(); this.frame.close(); this.frame.element.remove(); }
 }

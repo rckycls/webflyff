@@ -106,22 +106,24 @@ const BOUND_CLEARANCE = 0.6;
  * Where the chase camera is for a player standing at `at` (web, on the ground) with `heading`: CHASE_DISTANCE behind
  * it and `pitch` radians above its look-at point, which is CHASE_LOOK_HEIGHT over the ground. With `groundAt` (the
  * ground height at a web x, z, or null where unknown), the camera is pulled in front of ground that is in the way,
- * as the client's does, so it never looks from inside a hill.
+ * as the client's does, so it never looks from inside a hill. 2026-11-20 (mouse-drag): `far`, how far behind, is
+ * `4 + m_fZoom * 2` (:366) for the wheel's zoom; CHASE_DISTANCE (the zoom of 6) when not given.
  */
 export function chaseCamera(
   at: Vec3,
   heading: number,
   pitch: number,
   groundAt?: (x: number, z: number) => number | null,
+  far: number = CHASE_DISTANCE,
 ): { position: Vec3; target: Vec3 } {
   const target: Vec3 = [at[0], at[1] + CHASE_LOOK_HEIGHT, at[2]];
   const [fx, fz] = forwardOf(heading);
   const back = Math.cos(pitch);
   // unit vector from the target to the camera
   const direction: Vec3 = [-fx * back, Math.sin(pitch), -fz * back];
-  let distance = CHASE_DISTANCE;
+  let distance = far;
   if (groundAt !== undefined) {
-    for (let d = BOUND_START; d < CHASE_DISTANCE; d += BOUND_STEP) {
+    for (let d = BOUND_START; d < far; d += BOUND_STEP) {
       const x = target[0] + direction[0] * d;
       const z = target[2] + direction[2] * d;
       const ground = groundAt(x, z);

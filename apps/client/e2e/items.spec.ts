@@ -185,9 +185,12 @@ test('inventory, item requests, ground pickup and scroll revival wait for server
   await expect(bag.getByRole('button', { name: 'Equipped Wooden Sword' })).toHaveCount(0);
   if (isMobile) { await cell(7).click(); await action('drop').click(); }
   else await cell(7).dragTo(page.locator('.world-view canvas'), { targetPosition: { x: 300, y: 400 } });
-  const dropDialog = page.getByRole('dialog', { name: 'Drop item', exact: true });
+  // 2026-11-20 (mouse-drag-ui): Neuz's count box (APP_DROP_ITEM), filled with the whole stack, in the middle
+  const dropDialog = page.getByRole('dialog', { name: 'Drop confirmation', exact: true });
   await expect(dropDialog).toBeVisible();
-  await typeAmount(page, dropDialog.getByLabel('Drop quantity'), '1'); await dropDialog.getByRole('button', { name: 'Drop', exact: true }).click();
+  await expect(dropDialog.getByLabel('Drop quantity')).toHaveValue('2');
+  await page.screenshot({ path: info.outputPath('drop-item.png') });
+  await typeAmount(page, dropDialog.getByLabel('Drop quantity'), '1'); await dropDialog.getByRole('button', { name: 'OK', exact: true }).click();
   await expect.poll(() => sentOf(gateway, 0xff0007).length).toBe(1);
   await expect(cell(7)).toContainText('2');
   await closeBag();

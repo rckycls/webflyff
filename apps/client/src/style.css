@@ -1952,13 +1952,23 @@ fieldset:disabled .btn {
 .inventory-item-description { width: 100%; line-height: 1.4; white-space: pre-line; }
 .hud-inventory:not([data-mobile-window]) .inventory-details { position: fixed; pointer-events: none; max-height: calc(100vh - 16px); overflow: hidden; }
 .hud-inventory:not([data-mobile-window]) .inventory-details-close { display: none; }
-.inventory-drop-dialog { position: absolute; left: -220px; top: 200px; display: flex; flex-wrap: wrap; gap: 8px; width: 200px; padding: 12px; border: 2px solid #d5a188; border-radius: 4px; background: #fff6eb; color: #382b20; box-shadow: 0 2px 5px #0005; z-index: 4; }
-.inventory-actions-right .inventory-drop-dialog { left: calc(100% + 8px); }
-.inventory-drop-dialog strong { width: 100%; }
-.inventory-drop-dialog input { width: 70px; }
-.inventory-drop-dialog button { min-height: 28px; }
-.hud-inventory[data-mobile-window] .inventory-drop-dialog { left: 50%; top: 50%; transform: translate(-50%, -50%); }
-.hud-inventory[data-mobile-window] .inventory-drop-dialog button { min-height: 40px; }
+/* 2026-11-20 (mouse-drag-ui): the V15 ground-drop boxes (dropWindows.ts) and the shop's buy/sell boxes
+   (shopConfirmWindows.ts) are resdata.inc windows. Their words are Neuz's 12 px Verdana; the quest warning's text black on
+   its edit. On a phone they open in the middle over the bag at their own size, as the trade's boxes do, with a few px more
+   round each button for a finger. */
+.hud-drop-window, .hud-shop-confirm { font: 12px/14px Verdana, Tahoma, sans-serif; }
+.hud-drop-window .hud-res-static-text, .hud-shop-confirm .hud-res-static-text { white-space: normal; }
+.hud-shop-confirm [data-control='WIDC_STATIC2'] .hud-res-static-text { color: #000000; text-shadow: none; text-align: right; right: 4px; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  :is(.hud-drop-window, .hud-shop-confirm) { top: 48px !important; transform: none !important; z-index: 70 !important; }
+  :is(.hud-drop-window, .hud-shop-confirm)::before {
+    content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
+  }
+  :is(.hud-drop-window, .hud-shop-confirm) .hud-picture-button::before { content: ''; position: absolute; inset: -8px -4px; }
+  :is(.hud-drop-window, .hud-shop-confirm) .hud-res-edit input { min-height: 0 !important; }
+  .hud-drop-item, .hud-drop-confirm { left: calc(50% - 136px) !important; }
+  .hud-quest-item-warning { left: calc(50% - 160px) !important; }
+}
 .hud-nearby-items { position: absolute; pointer-events: auto; right: max(10px, env(safe-area-inset-right)); top: 32%; width: 176px; padding: 7px; border: 1px solid #d7ac8f; border-radius: 5px; background: #fff6ebee; color: #382b20; box-shadow: 0 2px 6px #0004; }
 .hud-nearby-items > strong { display: block; margin-bottom: 5px; font-size: 11px; }
 .nearby-items-list { max-height: 190px; overflow-y: auto; touch-action: pan-y; }
@@ -3918,6 +3928,8 @@ fieldset:disabled .btn {
   .world[data-cursors]:not([data-summon-armed]) .world-view canvas[data-cursor="attack"] { cursor: var(--cur-attack, pointer); }
   .world[data-cursors]:not([data-summon-armed]) .world-view canvas[data-cursor="npc"] { cursor: var(--cur-npc, pointer); }
   .world[data-cursors]:not([data-summon-armed]) .world-view canvas[data-cursor="no"] { cursor: var(--cur-no, not-allowed); }
+  /* 2026-11-20 (mouse-drag): CUR_CAMERA while the middle button is held (OnSetCursor, WndWorld.cpp:2567-2571) */
+  .world[data-cursors] .world-view canvas[data-cursor="camera"] { cursor: var(--cur-camera, move); }
   .world[data-cursors][data-loading], .world[data-cursors][data-loading] * { cursor: var(--cur-delay, wait); }
 }
 

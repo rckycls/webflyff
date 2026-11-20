@@ -12,9 +12,15 @@
 //   CTheme::RenderWndButton_4Texture  _Interface/ITheme.cpp:1336-1414      a button's 4 states side by side in its picture
 //   CWndMgr::Process (Escape)     _Interface/WndManager.cpp:3295-3420      Escape closes the window that has the focus
 //   CWndBase::GetWndBase          WndBase.cpp:2048-2095                    ... but never the status window (escapeCloses)
+//   CWndBase::GetResizeDir         WndBase.cpp:1967-2001                    2026-11-20: a captioned WBS_THICKFRAME window's edges
+//                                                                          drag too (the Message window, the Navigator)
+//   CWndBase::AdjustMaxRect        WndBase.cpp:2502-2522                    2026-11-20: the most a window's edges give it
+//   CWndMgr::PutRegInfo / CreateApplet  WndManager.cpp:1981-1986, 2514-2543  2026-11-20: a window's place kept for the next
+//                                                                          time (windowMemory.ts, `rememberAs`)
 
 import { themeUrl } from './art';
 import type { UiArt } from './art';
+import { WindowMemory } from './windowMemory';
 
 /** The side of a tile of a tiled window (`sizeBmp[ 0 ] = CSize( 16, 16 )`, `WndNeuz.cpp:293`). */
 const TILE = 16;
@@ -69,7 +75,12 @@ export interface FrameLayout {
    * size (the window's `AdjustMinRect`).
    */
   resize?: { width: number; height: number };
+  /** 2026-11-20 (mouse-drag-ui): the most the edges give it (`AdjustMaxRect`: the Navigator's 192 x 208); none: no most. */
+  resizeMax?: { width: number; height: number };
 }
+
+/** The rule every phone layout of the HUD follows (numpad.ts `PHONE`): no edges drag there, and no place is kept. */
+const PHONE = '(max-width: 1000px) and (pointer: coarse)';
 
 /** `GetResizeDir`'s band: 6 px in from the window's edges. */
 const RESIZE_BAND = 6;
@@ -105,11 +116,12 @@ export interface WindowRect {
 /**
  * The rectangle a drag of edge `dir` by (`dx`, `dy`) from `old` gives (`WindowProc`, `WndBase.cpp:1171-1230`): the drag
  * cut to whole steps of 16 px toward 0, an edge within 10 px of the room's (the layer above the task bar) put onto it,
- * then the least size kept from the edge that did not move (`AdjustMinRect`, `:2480-2499`).
+ * then the least size kept from the edge that did not move (`AdjustMinRect`, `:2480-2499`), and 2026-11-20 the most
+ * (`AdjustMaxRect`, `:2502-2522`) the same way.
  */
 export function resizeRect(
   old: WindowRect, dir: number, dx: number, dy: number, room: { width: number; height: number },
-  least: { width: number; height: number },
+  least: { width: number; height: number }, most?: { width: number; height: number },
 ): WindowRect {
   const sx = Math.trunc(dx / RESIZE_STEP) * RESIZE_STEP;
   const sy = Math.trunc(dy / RESIZE_STEP) * RESIZE_STEP;
@@ -129,6 +141,14 @@ export function resizeRect(
   if (bottom - top < least.height) {
     if (top > old.top) top = bottom - least.height;
     else bottom = top + least.height;
+  }
+  if (most !== undefined && right - left > most.width) {
+    if (left < old.left) left = right - most.width;
+    else right = left + most.width;
+  }
+  if (most !== undefined && bottom - top > most.height) {
+    if (top < old.top) top = bottom - most.height;
+    else bottom = top + most.height;
   }
   return { left, top, width: right - left, height: bottom - top };
 }
@@ -160,6 +180,21 @@ export function frameTile(x: number, y: number, cx: number, cy: number): number 
 
 /** The windows open on a document, the top one last: Escape closes that one. */
 const stacks = new WeakMap<Document, WindowFrame[]>();
+
+/** 2026-11-20 (mouse-drag-ui): where a document's remembered windows keep their places (`rememberWindows`). */
+const memories = new WeakMap<Document, WindowMemory>();
+
+/**
+ * 2026-11-20 (mouse-drag-ui): from now on the windows of `doc` with a `rememberAs` keep their place (and size, when their
+ * edges drag) in `storage` as they close and as the page goes, with the screen's size, and open there again on a screen
+ * of that size (Neuz's regInfo.dat, windowMemory.ts). Desktop only. `storage` null (blocked): nothing is kept.
+ */
+export function rememberWindows(doc: Document, storage: Storage | null): void {
+  const view = doc.defaultView ?? window;
+  const first = !memories.has(doc);
+  memories.set(doc, new WindowMemory(storage, () => `${view.innerWidth}x${view.innerHeight}`));
+  if (first) view.addEventListener('pagehide', () => { for (const frame of stacks.get(doc) ?? []) frame.keepPlace(); });
+}
 
 /** How much of each layer's bottom the windows leave free (`setLayoutBottom`). */
 const layoutBottoms = new WeakMap<Element, number>();
@@ -269,6 +304,12 @@ export class WindowFrame {
   onResize?: (width: number, height: number) => void;
   /** 2026-11-09: called when a drag of the window or of an edge ends (the window's place to keep). */
   onPlaced?: () => void;
+  /**
+   * 2026-11-20 (mouse-drag-ui): the key a window's place is kept under (its APP_* name, Neuz's applets'), once
+   * `rememberWindows` was called for its document; none: it opens where it is told, each time.
+   */
+  rememberAs?: string;
+  private readonly most: { width: number; height: number } | undefined;
 
   constructor(title: string, art: UiArt, layout: FrameLayout = DEFAULT_LAYOUT, doc: Document = document) {
     this.doc = doc;
@@ -284,6 +325,7 @@ export class WindowFrame {
     this.tilePrefix = layout.tiles ?? 'WndTile';
     this.insets = this.caption ? [CLIENT_LEFT, CAPTION + CLIENT_TOP, CLIENT_RIGHT, CLIENT_BOTTOM] : layout.insets ?? [0, 0, 0, 0];
     this.least = layout.resize;
+    this.most = layout.resizeMax;
     const element = doc.createElement('div');
     element.className = 'hud-window';
     element.hidden = true;
@@ -333,8 +375,11 @@ export class WindowFrame {
     element.addEventListener('pointerdown', (event) => {
       this.raise();
       if (!this.caption) this.press(event);
+      // 2026-11-20 (mouse-drag-ui): a captioned window's edges drag too (the Message window showed the cursors only)
+      else this.pressEdge(event);
     });
-    titleBar.addEventListener('pointerdown', (event) => this.startDrag(event));
+    // the title bar's top 6 px are the top edge's
+    titleBar.addEventListener('pointerdown', (event) => { if (!this.pressEdge(event)) this.startDrag(event); });
     if (this.least !== undefined) element.addEventListener('pointermove', (event) => this.hover(event));
   }
 
@@ -356,23 +401,62 @@ export class WindowFrame {
     const { x, y } = this.local(event);
     const dir = this.least === undefined || !this.resizable ? 0 : resizeDirection(x, y, this.width, this.shownHeight);
     if (dir !== 0) {
-      const { x: left, y: top } = this.position;
-      this.resizing = { pointerId: event.pointerId ?? 0, dir, x: event.clientX, y: event.clientY,
-        old: { left, top, width: this.width, height: this.shownHeight } };
-      const view = this.view();
-      view.addEventListener('pointermove', this.onMove);
-      view.addEventListener('pointerup', this.onUp);
-      view.addEventListener('pointercancel', this.onUp);
-      event.preventDefault();
+      this.startResize(event, dir);
       return;
     }
     if (!this.movable) return;
     this.startDrag(event);
   }
 
+  /**
+   * 2026-11-20 (mouse-drag-ui): a press on a captioned window with `resize` (WBS_THICKFRAME): within 6 px of an edge it
+   * drags that edge, as a caption-less one's (`press`); a control takes its own press. Desktop only. True when it did.
+   */
+  private pressEdge(event: PointerEvent): boolean {
+    if (this.least === undefined || !this.resizable || event.button !== 0 || this.drag !== null || this.resizing !== null) return false;
+    if (this.phone()) return false;
+    const target = event.target as Element | null;
+    if (target?.closest?.('button, input, textarea, select, a, [data-press]') != null) return false;
+    const { x, y } = this.local(event);
+    const dir = resizeDirection(x, y, this.width, this.shownHeight);
+    if (dir === 0) return false;
+    this.startResize(event, dir);
+    return true;
+  }
+
+  private startResize(event: PointerEvent, dir: number): void {
+    const { x: left, y: top } = this.position;
+    this.resizing = { pointerId: event.pointerId ?? 0, dir, x: event.clientX, y: event.clientY,
+      old: { left, top, width: this.width, height: this.shownHeight } };
+    const view = this.view();
+    view.addEventListener('pointermove', this.onMove);
+    view.addEventListener('pointerup', this.onUp);
+    view.addEventListener('pointercancel', this.onUp);
+    event.preventDefault();
+  }
+
+  private phone(): boolean {
+    return this.view().matchMedia?.(PHONE).matches === true;
+  }
+
+  /** 2026-11-20 (mouse-drag-ui): where a remembered window's place goes (none on a phone, or before `rememberWindows`). */
+  private memory(): WindowMemory | undefined {
+    return this.rememberAs === undefined || this.phone() ? undefined : memories.get(this.doc);
+  }
+
+  /** 2026-11-20 (mouse-drag-ui): an open remembered window's place kept (`PutRegInfo`): its top left, its size when it resizes. */
+  keepPlace(): void {
+    const memory = this.memory();
+    if (memory === undefined || !this.open_) return;
+    const { x, y } = this.position;
+    memory.save(this.rememberAs!, this.least === undefined ? { x, y } : { x, y, width: this.width, height: this.fullHeight });
+  }
+
   /** The resize cursor over the edges' band (`OnSetCursor`, WndNeuz.cpp:680-700). */
   private hover(event: PointerEvent): void {
     if (this.drag !== null || this.resizing !== null) return;
+    // 2026-11-20: a phone's captioned window does not resize (pressEdge): no resize cursors there
+    if (this.caption && this.phone()) return;
     const { x, y } = this.local(event);
     const dir = this.resizable ? resizeDirection(x, y, this.width, this.shownHeight) : 0;
     this.element.style.cursor = RESIZE_CURSORS[dir]!;
@@ -417,6 +501,16 @@ export class WindowFrame {
    * task bar if it is taller: `fit`) and puts it on top.
    */
   open(at: { x: number; y: number } | 'center'): void {
+    // 2026-11-20 (mouse-drag-ui): a remembered window opens where it was left on a screen of this size, a resizable one at
+    // its kept size too (CreateApplet, WndManager.cpp:2514-2543), kept on the layer as any (`moveTo`)
+    const kept = this.open_ ? null : this.memory()?.load(this.rememberAs!) ?? null;
+    if (kept !== null) {
+      if (this.least !== undefined && kept.width !== undefined && kept.height !== undefined) {
+        const most = this.most ?? { width: Infinity, height: Infinity };
+        this.setSize(Math.min(most.width, Math.max(this.least.width, kept.width)), Math.min(most.height, Math.max(this.least.height, kept.height)));
+      }
+      at = { x: kept.x, y: kept.y };
+    }
     this.centered = at === 'center';
     this.element.hidden = false;
     this.fit();
@@ -439,6 +533,7 @@ export class WindowFrame {
   /** Hides the window (`Destroy`, for the windows Piece 4 keeps) and calls `onClose`; nothing if it is not open. */
   close(): void {
     if (!this.open_) return;
+    this.keepPlace();
     this.open_ = false;
     this.endDrag();
     this.element.hidden = true;
@@ -601,7 +696,7 @@ export class WindowFrame {
         height: (layer?.clientHeight ?? 0) - (layer === null ? 0 : layoutBottoms.get(layer) ?? 0),
       };
       const rect = resizeRect(resizing.old, resizing.dir, (event.clientX - resizing.x) / this.scale,
-        (event.clientY - resizing.y) / this.scale, room, this.least!);
+        (event.clientY - resizing.y) / this.scale, room, this.least!, this.most);
       this.centered = false;
       this.element.style.left = `${rect.left}px`;
       this.element.style.top = `${rect.top}px`;

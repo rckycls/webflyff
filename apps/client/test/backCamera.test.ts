@@ -161,9 +161,9 @@ describe('the flight camera (Piece 7 M5, CBackCamera::Process in flight, Camera.
 
   it('angleX lifts the pitch, up to 80', () => {
     const height = (angleX: number) => settle(new BackCamera(), 0, angleX).d3d[1] - (AT_D3D[1] + 0.9);
-    // m_fRoty -12 + m_fZoom 6 * 4 + angleX, the offset (0, 0, -16) turned up by it
-    expect(height(0)).toBeCloseTo(16 * Math.sin((12 * Math.PI) / 180), 3);
-    expect(height(30)).toBeCloseTo(16 * Math.sin((42 * Math.PI) / 180), 3);
+    // m_fRoty (0 after the take-off's Unlock, 2026-11-20) + m_fZoom 6 * 4 + angleX, the offset (0, 0, -16) turned up by it
+    expect(height(0)).toBeCloseTo(16 * Math.sin((24 * Math.PI) / 180), 3);
+    expect(height(30)).toBeCloseTo(16 * Math.sin((54 * Math.PI) / 180), 3);
     expect(height(90)).toBeCloseTo(16 * Math.sin((80 * Math.PI) / 180), 3);
   });
 
@@ -215,5 +215,98 @@ describe('the flight camera turns with the arrows (Piece 7 M5, Decision 3)', () 
     expect(Math.abs(swung[0] - 100)).toBeGreaterThan(1);
     camera.follow(at, 0, open); // landed
     expect(behind()[0]).toBeCloseTo(100, 3); // the next flight's camera starts unturned (Unlock)
+  });
+});
+
+describe("V15's zoom and turn (2026-11-20, mouse-drag: WndWorld.cpp:7343-7613, Camera.cpp:118-366)", () => {
+  const open: Ground = { terrainHeight: () => -100, landAttr: () => HAttr.NONE, objectsNear: () => [] };
+  const distance = (camera: BackCamera): number => {
+    let view = camera.follow([0, 0, 0], 0, open);
+    for (let i = 0; i < 60; i++) view = camera.follow([0, 0, 0], 0, open);
+    return vecLength(sub(view.position, view.target));
+  };
+
+  it('starts 16 behind at 12 degrees: m_fZoom 6, m_fRoty -12', () => {
+    const camera = new BackCamera();
+    expect(camera.zoom).toBe(6);
+    expect(camera.pitch).toBeCloseTo((12 * Math.PI) / 180, 9);
+    expect(distance(camera)).toBeCloseTo(16, 3);
+  });
+
+  it('the wheel: 0.5 a notch, in to -1.5 (1 m), out to 7 (18 m), 15 without ZOOMLIMIT; the pitch moves 4 degrees a zoom', () => {
+    const camera = new BackCamera();
+    camera.wheel(1); // rolled toward the player: in
+    expect(camera.zoom).toBe(5.5);
+    expect(camera.pitch).toBeCloseTo((10 * Math.PI) / 180, 9);
+    camera.wheel(100);
+    expect(camera.zoom).toBe(-1.5);
+    expect(distance(camera)).toBeCloseTo(1, 3);
+    camera.wheel(-100);
+    expect(camera.zoom).toBe(7);
+    expect(distance(camera)).toBeCloseTo(18, 3);
+    camera.zoomLimit = false;
+    camera.wheel(-100);
+    expect(camera.zoom).toBe(15);
+  });
+
+  it('PageUp / PageDown: 0.6 a frame, 0 to 7', () => {
+    const camera = new BackCamera();
+    camera.page(1);
+    expect(camera.zoom).toBeCloseTo(6.6, 9);
+    camera.page(1);
+    expect(camera.zoom).toBe(7);
+    camera.wheel(100);
+    camera.page(-1); // from -1.5: PageUp's floor is 0
+    expect(camera.zoom).toBe(0);
+  });
+
+  it('turn: m_fRoty kept between -80 and 80 - zoom * 4, the camera up to 80 degrees', () => {
+    const camera = new BackCamera();
+    camera.follow([0, 0, 0], 0, open);
+    const heading = camera.heading!;
+    camera.turn(90, 0);
+    expect(camera.heading! - heading).toBeCloseTo(Math.PI / 2, 9);
+    camera.turn(0, 500);
+    expect(camera.rotY).toBe(56);
+    expect(camera.pitch).toBeCloseTo((80 * Math.PI) / 180, 9);
+    camera.turn(0, -500);
+    expect(camera.rotY).toBe(-80);
+    expect(camera.pitch).toBeCloseTo((-56 * Math.PI) / 180, 9);
+  });
+
+  it('the ground camera closes a quarter of its gap a step (fFactor 4); behind() swings it behind the mover', () => {
+    const camera = new BackCamera();
+    camera.follow([0, 0, 0], 0, open);
+    camera.turn(180, 0);
+    const first = camera.follow([0, 0, 0], 0, open);
+    const settled = (() => { let v = first; for (let i = 0; i < 80; i++) v = camera.follow([0, 0, 0], 0, open); return v; })();
+    expect(vecLength(sub(first.position, settled.position))).toBeGreaterThan(1);
+    // behind a mover at angle 90: the heading pi - pi/2
+    camera.behind(90);
+    expect(camera.heading).toBeCloseTo(Math.PI / 2, 9);
+  });
+
+  it('in the air: the take-off sets m_fRoty to 0, unlock() turns it back behind; behind() does nothing', () => {
+    const camera = new BackCamera();
+    const at = toWebPosition([100, 50, 100] as Vec3);
+    camera.turn(0, 20);
+    camera.followFlight(at, 0, 0, false, false, open);
+    expect(camera.rotY).toBe(0);
+    camera.turn(30, 10);
+    expect(camera.rotY).toBe(10);
+    camera.unlock();
+    expect(camera.rotY).toBe(0);
+    const heading = camera.heading;
+    camera.behind(45);
+    expect(camera.heading).toBe(heading);
+  });
+
+  it('the own room: zoom 0.5 or more, pitch 10 degrees or more (CM_MYROOM)', () => {
+    const camera = new BackCamera();
+    camera.wheel(100);
+    camera.setRoom(true);
+    expect(camera.zoom).toBe(0.5);
+    camera.turn(0, -500);
+    expect(camera.pitch).toBeCloseTo((10 * Math.PI) / 180, 9);
   });
 });

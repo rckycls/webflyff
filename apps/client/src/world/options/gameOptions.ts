@@ -12,6 +12,11 @@
 //                                                            that alpha (`CWndBase::m_nAlpha`, WndBase.cpp:661-690)
 //   m_bBattleBGM    :194, "BattleBGM"                        off: no battle music when the own player attacks
 //                                                            (`CMover::PlayCombatMusic`, MoverMove.cpp:31-61)
+//   m_bCameraLock   :245, "CameraLock"                       2026-11-20 (mouse-drag): on, W/A/S/D held (the right
+//                                                            button not) turn the camera behind the character
+//                                                            (WndWorld.cpp:8011-8015); the Video page's, not shown yet
+//   m_bZoomLimit    :261, "ZOOMLIMIT"                        2026-11-20: on, the wheel zooms out to 7, else 15
+//                                                            (WndWorld.cpp:7389-7399); the Video page's, not shown yet
 //
 // Neuz writes them to neuz.ini when it closes (HwOption.cpp:1069-1126); the browser keeps them in its storage at once, one
 // set for every character, as neuz.ini is one per client.
@@ -24,11 +29,15 @@ export interface GameOptions {
   /** `m_nWindowAlpha == 128`. */
   translucent: boolean;
   battleMusic: boolean;
+  /** 2026-11-20 (mouse-drag): `m_bCameraLock`. */
+  cameraLock: boolean;
+  /** 2026-11-20 (mouse-drag): `m_bZoomLimit`. */
+  zoomLimit: boolean;
 }
 
-/** `CHwOption::Init`'s values (HwOption.cpp:173-246). */
+/** `CHwOption::Init`'s values (HwOption.cpp:173-261). */
 export const DEFAULT_GAME_OPTIONS: Readonly<GameOptions> = {
-  trade: true, party: true, autoAttack: true, translucent: false, battleMusic: false,
+  trade: true, party: true, autoAttack: true, translucent: false, battleMusic: false, cameraLock: true, zoomLimit: true,
 };
 
 /** The alpha of the windows' pictures with Translucency (`CWndBase::m_nAlpha = g_Option.m_nWindowAlpha = 128`). */

@@ -363,6 +363,8 @@ export class SkillWindow {
       ? { width: 800, height: 440, mobileScale: 1, fitWhole: true }
       : { width: WIDTH, height: HEIGHT }, doc);
     frame.element.classList.add('hud-skills');
+    // 2026-11-20 (mouse-drag-ui): its place kept for the next time (regInfo.dat, frame.ts `rememberAs`)
+    frame.rememberAs = 'APP_SKILL3';
     frame.element.classList.toggle('hud-skills-landscape', this.mobile);
     frame.onClose = () => this.closed();
     this.frame = frame;

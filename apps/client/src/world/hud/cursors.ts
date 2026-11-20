@@ -10,9 +10,9 @@
 //     the NPC dialog's answers and keys CUR_SELECT, its context words CUR_HELP (`WndDialog.cpp:161-232`);
 //   - the world: `worldCursor` (`CWndWorld::OnSetCursor`, `WndWorld.cpp:2562-2660`); a dropped item CUR_GETITEM (:2592-2593);
 //   - waiting: CUR_DELAY, which Neuz shows as it starts (`Neuz.cpp:1563`): here while the world loads.
-// Not used: CUR_CAMERA (the middle button's camera, :2568-2571: the browser turns the camera with the right button, as
-// Neuz's default interface does, which keeps the cursor) and CUR_CONTROL (the world's controls, chests and levers, are not
-// in the browser).
+//   - 2026-11-20 (mouse-drag): CUR_CAMERA while the middle button is held on the world (:2567-2571; it turns the flight
+//     camera); the right button's camera keeps the cursor, as Neuz's default interface does.
+// Not used: CUR_CONTROL (the world's controls, chests and levers, are not in the browser).
 
 /** A cursor: its picture's key (the converter's), its hotspot, and the browser's own cursor when the picture is missing. */
 export interface CursorFile {

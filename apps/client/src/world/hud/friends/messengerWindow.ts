@@ -107,6 +107,8 @@ export class MessengerWindow {
     // whole screen
     const frame = new WindowFrame(TITLE, art, { width: WIDTH, height: HEIGHT }, doc);
     frame.element.classList.add('hud-messenger');
+    // 2026-11-20 (mouse-drag-ui): its place kept for the next time (regInfo.dat, frame.ts `rememberAs`)
+    frame.rememberAs = 'APP_MESSENGER_EX';
     // 2026-11-16 (owner): above the phone's open bag (`overBag`)
     frame.overBag = true;
     const body = frame.body;
