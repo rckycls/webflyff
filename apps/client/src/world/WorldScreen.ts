@@ -1109,6 +1109,7 @@ export class WorldScreen {
     if (this.over) return;
     if (event.type === 'transition') {
       this.autoPlay?.onEvent({ kind: 'worldChange' }); // custom (owner 2026-11-15): before the world (and Auto Play) goes
+      this.teleportWindow?.moved(); // owner 2026-11-20: a change of world closes a Teleport window waiting for its move
       this.disposeWorld();
       this.element.replaceChildren(this.openLoading(this.element.ownerDocument, event.worldId).element, this.leaveButton);
       const folder = this.data!.worlds.get(event.worldId);
@@ -1530,7 +1531,10 @@ export class WorldScreen {
       this.skillWindow?.onMessage(objectId, value, this.own);
       if (value.type === 'setPos' || value.type === 'setPosAngle') {
         this.views?.snap(objectId);
-        if (objectId === self?.objectId) this.backCamera.relocate();
+        if (objectId === self?.objectId) {
+          this.backCamera.relocate();
+          this.teleportWindow?.moved(); // owner 2026-11-20: the Teleport window closes once its teleport starts
+        }
       }
       if (value.type === 'setPetName') this.recolorTags(); // pets R1: the pet mover's new name (OnSetPetName)
       if (value.type === 'modifyMode') this.onModifyMode(objectId, value.mode);

@@ -5,7 +5,7 @@
 
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { createWorldScript, newVagrantOwn, writeAddSelf } from '@flyffweb/testkit';
+import { createWorldScript, newVagrantOwn, writeAddSelf, writeSetPos } from '@flyffweb/testkit';
 import { MADRIGAL, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, playGateway, self, sentOf } from './worldHarness';
 import type { Gateway } from './worldHarness';
 
@@ -13,6 +13,8 @@ test.describe.configure({ timeout: 120_000 });
 
 const TELEPORT_WINDOW = 0x8fff0120;
 const REGULAR = 0x46, VIP1 = 0x41; // 'F', 'A' (_Common/authorization.h)
+/** Where the pretend World puts the player after the teleport: a SETPOS near the square, so no far map is streamed. */
+const NEARBY: [number, number, number] = [SQUARE[0] + 20, SQUARE[1], SQUARE[2] + 20];
 
 function script(authorization: number) {
   const own = newVagrantOwn();
@@ -54,7 +56,8 @@ async function expectWhole(page: Page, win: Locator): Promise<void> {
 }
 
 test('Teleport: Extras opens it; a regular player\'s VIP place is refused, Darkon is sent as 2 and the window closes', async ({ page }, info) => {
-  const gateway = await playGateway(page, script(REGULAR));
+  const s = script(REGULAR);
+  const gateway = await playGateway(page, s);
   await enterFlaris(page);
   const win = await openTeleport(page);
   await expect(win.locator('[role="option"]')).toHaveCount(14);
@@ -75,12 +78,16 @@ test('Teleport: Extras opens it; a regular player\'s VIP place is refused, Darko
   await press(page, win.locator('[role="option"][data-place="2"]'));
   await expect(win.locator('[data-control="WIDC_STATIC1"]')).toHaveText('Darkon');
   await press(page, win.locator('[data-control="WIDC_APPLY"]'));
-  await expect(win).toBeHidden();
   await expect.poll(() => places(gateway)).toEqual([2]);
+  // 2026-11-20 (owner): open until the World moves the player (its SETPOS), then closed
+  await expect(win).toBeVisible();
+  gateway.pushCache(s.later([writeSetPos(SELF_ID, NEARBY)]));
+  await expect(win).toBeHidden();
 });
 
 test('Teleport: a VIP1 player sends Volcane as 11', async ({ page }, info) => {
-  const gateway = await playGateway(page, script(VIP1));
+  const s = script(VIP1);
+  const gateway = await playGateway(page, s);
   await enterFlaris(page);
   const win = await openTeleport(page);
   await expect(win.locator('[role="option"][data-locked]')).toHaveCount(0);
@@ -89,6 +96,7 @@ test('Teleport: a VIP1 player sends Volcane as 11', async ({ page }, info) => {
   await expectWhole(page, win);
   await page.screenshot({ path: info.outputPath('teleport-vip.png') });
   await press(page, win.locator('[data-control="WIDC_APPLY"]'));
-  await expect(win).toBeHidden();
   await expect.poll(() => places(gateway)).toEqual([11]);
+  gateway.pushCache(s.later([writeSetPos(SELF_ID, NEARBY)]));
+  await expect(win).toBeHidden();
 });
