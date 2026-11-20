@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WebItemProp } from '@flyffweb/formats';
-import { CraftCardWindow } from '../src/world/items/craftCardWindow';
+import { CRAFT_CARD, CraftCardWindow } from '../src/world/items/craftCardWindow';
 import type { CraftCardHost } from '../src/world/items/craftCardWindow';
 import type { NpcWindowPacket } from '../src/world/items/npcWindowKit';
 import { itemProp, newVagrant } from './helpers/ownState';
@@ -67,6 +67,15 @@ const craftButton = (r: ReturnType<typeof rig>) => r.layer.querySelector<HTMLBut
 const bulkButton = (r: ReturnType<typeof rig>) => r.layer.querySelector<HTMLButtonElement>('.hud-craft-card [data-craft="bulk"]')!;
 
 describe('Craft Card window', () => {
+  it('every control fits inside the client area, with room below (owner 2026-11-20: Cancel and Result were cut off)', () => {
+    // the client area: the window less 18 px of caption, 4 top, 10 bottom, 4 left, 8 right (hud/frame.ts `SetWndRect`)
+    const clientWidth = CRAFT_CARD.width - 4 - 8, clientHeight = CRAFT_CARD.height - 18 - 4 - 10;
+    for (const control of CRAFT_CARD.controls) {
+      expect(control.rect[2], control.id).toBeLessThanOrEqual(clientWidth - 4);
+      expect(control.rect[3], control.id).toBeLessThanOrEqual(clientHeight - 4);
+    }
+  });
+
   it('a stone and a 4% card show Chance: 20% and Makes: one random 7% suit card', () => {
     const r = rig();
     expect(r.window.openAt(BOZMAN)).toBe(true);
