@@ -48,6 +48,12 @@ export class RolePlanner {
     return this.held.get(bot)?.role;
   }
 
+  /** How long the bot's role has left (ms); 0 when it has none or its time is up. */
+  remaining(bot: string): number {
+    const held = this.held.get(bot);
+    return held === undefined ? 0 : Math.max(0, held.until - this.now());
+  }
+
   due(bot: string): boolean {
     const held = this.held.get(bot);
     return held !== undefined && this.now() >= held.until;

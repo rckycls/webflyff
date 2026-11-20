@@ -43,6 +43,15 @@ describe('RolePlanner', () => {
     expect(planner.due('b0')).toBe(true);
   });
 
+  it('tells how long a bot\'s role has left', () => {
+    let now = 0;
+    const planner = new RolePlanner(TARGETS, () => 0.5, () => now);
+    planner.assign('b0', 'rookie');
+    now = 10 * MIN;
+    expect(planner.remaining('b0')).toBe(30 * MIN);
+    expect(planner.remaining('nobody')).toBe(0);
+  });
+
   it('lets shop and AFK last up to 90 minutes, at least 30', () => {
     let now = 0;
     const planner = new RolePlanner({ farming: 0, wandering: 0, upgrading: 0, shop: 1, afk: 0 }, () => 0.999, () => now);

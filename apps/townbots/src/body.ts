@@ -64,6 +64,7 @@ export class BotBody implements BotParts {
   /** The character the bot plays, once the list came. */
   character: CharacterSummary | undefined;
   session: WorldSession | undefined;
+  private entry: WorldEntry | undefined;
   private world_: WorldState | undefined;
   private own_: OwnState | undefined;
   private worldId_ = 0;
@@ -108,6 +109,9 @@ export class BotBody implements BotParts {
 
   /** The bot's own mover, while it is in the world. */
   self(): Mover | undefined { return this.world_?.self(); }
+
+  /** The server clock's tick for a behaviour report (`WorldScreen`: `this.entry.clock.tick()`). */
+  clockTick(): bigint { return this.entry?.clock.tick() ?? 0n; }
 
   /** A straight walk to `pos`, as a tap on the ground there (`OwnMover.walkTo`). */
   walkTo(pos: [number, number, number]): void {
@@ -204,6 +208,7 @@ export class BotBody implements BotParts {
   private async start(entry: WorldEntry, link: Link): Promise<void> {
     const entering = new Promise<void>((resolve, reject) => { this.finishEntering = { resolve, reject }; });
     entering.catch(() => {});
+    this.entry = entry;
     const session = new WorldSession(link.open, entry, (event) => this.onWorldEvent(event, entry));
     this.session = session;
     const safetyNet = setTimeout(() => this.finishEntering?.reject(new Error(`did not enter within ${ENTER_WAIT_MS / 1000} s`)), ENTER_WAIT_MS);
