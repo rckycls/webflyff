@@ -6,7 +6,7 @@ const TITLES = ['Vagrant', 'Mercenary', 'Acrobat', 'Assist', 'Magician', 'Puppet
 const title = (job: number): string => TITLES[job] ?? '';
 
 function bot(group: BotSpec['group'], job: number, level: number): BotSpec {
-  return { account: 'testbot01', password: 'pw', bankPin: '1234', name: 'Abcd', group, job, level, look: { sex: 0, hair: 0, face: 0 } };
+  return { account: 'testbot01', password: 'pw', bankPin: '1234', name: 'Abcd', home: 'a', group, job, level, look: { sex: 0, hair: 0, face: 0 } };
 }
 
 describe('setupCommands', () => {
@@ -20,6 +20,11 @@ describe('setupCommands', () => {
 
   it('sets a veteran\'s second job, then its skill lines', () => {
     expect(setupCommands(bot('veteran', 6, 65), title, { 6: ['/slv 1 1'] })).toEqual(['/level Knight 65', '/slv 1 1']);
+  });
+
+  it("sets a hero as its second job's title, the level and the hero step (2), then its skill lines", () => {
+    expect(setupCommands(bot('hero', 24, 129), title, { 24: ['/slv 2 2'] })).toEqual(['/level Knight 129 2', '/slv 2 2']);
+    expect(setupCommands(bot('hero', 25, 125), title, {})).toEqual(['/level Blade 125 2']);
   });
 
   it('never makes items by command', () => {
