@@ -42,14 +42,12 @@ V15 on PC (Neuz) is the same way as the phone games: a mouse drag down lifts the
 Both invert checks are offered: up/down because that is the one players asked about, left/right because the owner
 wanted a preference (Genshin and Tower of Fantasy offer it, though not for touch).
 
-## Open question for the owner
+## The desktop mouse: phone only (owner, 2026-11-21)
 
-Should the **desktop mouse drag** follow the same setting? Today the mouse's up/down is still the old reversed way
-(`DRAG_UP_SIGN = -1`, a drag down lowers the camera), which is also the opposite of V15. Two choices:
-
-1. leave the mouse as it is (nothing to do);
-2. or flip the mouse's default to V15's way (`DRAG_UP_SIGN = 1`) and show the same "Invert Camera" group on the desktop
-   Option window (in the free space under Duel Requests), read by the mouse too.
+Asked whether the desktop mouse drag should follow the same setting, the owner answered **phone only**. The mouse keeps
+its direction (`DRAG_UP_SIGN = -1`, a drag down lowers the camera; the opposite of V15's mouse) and the desktop Option
+window has no "Invert Camera". If that is ever wanted: flip `DRAG_UP_SIGN` to 1 and show the group on the desktop page
+(the free space under Duel Requests), read by the mouse too.
 
 ## Tests
 
