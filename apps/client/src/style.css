@@ -3651,6 +3651,69 @@ fieldset:disabled .btn {
   .hud-teleport .hud-picture-button[data-word]:active { background: linear-gradient(#e9e9e9, #dadada) !important; }
 }
 
+/* custom (owner 2026-11-20): the Quick Job Change window on a phone: a compact panel over the open bag (overBag), as the
+   Teleport window's: the four portraits in one row (as tall as the room above the task bar leaves, up to their own 112 px),
+   the name, the words (three lines, scrolled by the finger), then V15's arrows half as large again and Go! as the phone
+   panels' silver button. The Yes/No box keeps its frame; its Yes and No grow to a finger's size. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-quick-job:not([hidden]) {
+    left: calc(50% - min(280px, 50% - 8px)) !important; top: 8px !important; transform: none !important;
+    width: min(560px, calc(100% - 16px)) !important; height: auto !important; display: flex !important; flex-direction: column;
+    max-height: calc(100% - var(--hud-taskbar-height, 48px) - 16px); overflow: hidden;
+  }
+  .hud-quick-job { background: none !important; box-shadow: none !important; border-radius: 0 !important; }
+  .hud-quick-job > .hud-window-frame {
+    display: grid !important; grid-template-columns: 16px minmax(0, 1fr) 16px; grid-template-rows: 16px 16px minmax(0, 1fr) 16px;
+  }
+  .hud-quick-job > .hud-window-frame > div { position: static !important; width: auto !important; height: auto !important; }
+  .hud-quick-job > .hud-window-title {
+    height: 18px !important; padding-top: 3px; background: none !important; border-radius: 0 !important; box-shadow: none !important;
+    font-size: 12px !important; line-height: 14px !important;
+  }
+  .hud-quick-job > .hud-window-close { left: auto !important; right: 7px !important; }
+  .hud-quick-job > .hud-window-close::before { content: ''; position: absolute; inset: -8px -8px -10px -12px; }
+  .hud-quick-job::before {
+    content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
+  }
+  .hud-quick-job .hud-edit-tiles {
+    position: absolute !important; inset: 0 !important; display: grid !important; grid-template-columns: 8px minmax(0, 1fr) 8px;
+    grid-template-rows: 8px minmax(0, 1fr) 10px; pointer-events: none;
+  }
+  .hud-quick-job .hud-edit-tiles:not(:has(> :nth-child(7))) { grid-template-rows: 8px 10px; }
+  .hud-quick-job .hud-edit-tiles > div { position: static !important; width: auto !important; height: auto !important; }
+  .hud-quick-job > .hud-window-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    flex: 0 1 auto; min-height: 0; box-sizing: border-box; margin: 22px 8px 10px 4px; padding: 4px 6px 6px;
+    font: 12px/15px Verdana, Tahoma, sans-serif; overflow: hidden;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto auto auto auto; gap: 5px 8px;
+  }
+  .hud-quick-job :is(.hud-res-static, .hud-res-text, .hud-res-custom, .hud-picture-button) {
+    position: relative !important; left: auto !important; top: auto !important;
+  }
+  .hud-quick-job :is(.hud-res-static, .hud-res-text) { width: auto !important; height: auto !important; }
+  .hud-quick-job .hud-res-text > .hud-res-scroll { display: none; }
+  .hud-quick-job :is([data-control='WIDC_CUSTOM1'], [data-control='WIDC_CUSTOM2'], [data-control='WIDC_CUSTOM3'], [data-control='WIDC_CUSTOM4']) {
+    grid-row: 1; justify-self: center; height: clamp(64px, calc(100vh - 230px), 112px) !important; width: auto !important;
+    aspect-ratio: 92 / 112;
+  }
+  .hud-quick-job [data-control='WIDC_STATIC1'] { grid-area: 2 / 1 / 3 / 5; min-height: 18px; }
+  .hud-quick-job [data-control='WIDC_TEXT1'] { grid-area: 3 / 1 / 4 / 5; min-height: 34px; }
+  .hud-quick-job .hud-res-text-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    max-height: 48px; box-sizing: border-box; padding: 4px 7px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+    line-height: 15px;
+  }
+  .hud-quick-job [data-control='WIDC_LEFT'] { grid-area: 4 / 1 / 5 / 2; justify-self: start; align-self: center; margin: 5px 11px; transform: scale(1.5); }
+  .hud-quick-job [data-control='WIDC_RIGHT'] { grid-area: 4 / 4 / 5 / 5; justify-self: end; align-self: center; margin: 5px 11px; transform: scale(1.5); }
+  .hud-quick-job [data-control='WIDC_GO'] { grid-area: 4 / 2 / 5 / 4; width: auto !important; height: auto !important; }
+  .hud-quick-job [data-control='WIDC_GO'] .auto-word {
+    width: 96px; height: 30px; border-color: #a3a3a3; background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3);
+    font: bold 12px/28px Verdana, Tahoma, sans-serif;
+    text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d;
+  }
+  .hud-quick-job-confirm :is([data-control='WIDC_YES'], [data-control='WIDC_NO']) { transform: scale(1.4); }
+}
+
 /* 2026-11-10 (bank-mail): the bank (hud/bank/bankWindows.ts; docs/superpowers/specs/2026-11-10-bank-mail-research.md §1).
    CWndBank is WndCommonBank.tga (the panels, the "$" marks, the penya bags and boxes are in it); each grid is CWndItemCtrl's
    4 x 5 cells of 32 px over 42 slots, packed, the hovered item 4 px larger, a stack's count at the bottom right in

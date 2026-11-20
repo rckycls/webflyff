@@ -11,6 +11,9 @@
 // The class lock is V15's too: a class NPC refuses its chain once another class's chain of the tier has begun
 // (`GetQuestState( ... ) >= 0`), so once any quest of a chain is current or completed, only that class is open.
 
+import type { ExpRow } from '@flyffweb/formats';
+import { expNeeded, expPercent } from '../sim/params';
+
 /** The tier a job change is due in. */
 export type JobTier = 'first' | 'second' | 'master' | 'hero';
 
@@ -103,6 +106,18 @@ export function dueTier(job: number, level: number, expPercent: number): JobTier
   return null;
 }
 
+/**
+ * The own EXP in units of 0.01 % (`GetExpPercent`), or 0 where the EXP table has no row past `level` (a GM's level past
+ * the table's top): `expNeeded` throws there, and a throw at the world's first frame would keep the loading screen up.
+ */
+export function ownExpPercent(exp: bigint, level: number, table: readonly ExpRow[]): number {
+  try {
+    return expPercent(exp, expNeeded(table, level));
+  } catch {
+    return 0;
+  }
+}
+
 /** The level the next job change opens at for `job`, or null for a Hero (none). */
 export function nextChangeLevel(job: number): number | null {
   if (job === 0) return 15;
@@ -134,16 +149,27 @@ export function jobPopupOff(storage: Pick<Storage, 'getItem'> | undefined): bool
 /**
  * The window's four slots for `job` in `tier`: the targets first, then filler locks. In the first and second tiers a
  * target is open unless another target's chain has begun and its own has not (`started` names a quest that is current or
- * completed).
+ * completed); and once a target's whole chain is done (`done` names a completed quest: its last one), only such a target
+ * is open, so a chain finished at the NPCs without the job change never pays a second gear set through another.
  */
-export function jobSlots(job: number, tier: JobTier, started: (questId: number) => boolean): JobSlot[] {
+export function jobSlots(
+  job: number, tier: JobTier, started: (questId: number) => boolean, done: (questId: number) => boolean = () => false,
+): JobSlot[] {
   let targets: number[];
   if (tier === 'first') targets = [...FIRST_JOBS];
   else if (tier === 'second') targets = [job * 2 + 4, job * 2 + 5]; // CMover::IsInteriorityJob: Mercenary 1 -> 6, 7
   else targets = [job + (tier === 'master' ? 10 : 8)];
   const begun = (target: number): boolean => (JOB_CHAINS.get(target) ?? []).some(started);
-  const locked = (tier === 'first' || tier === 'second') && targets.some(begun);
-  const slots: JobSlot[] = targets.map((target) => ({ job: target, open: !locked || begun(target) }));
+  const finished = (target: number): boolean => {
+    const chain = JOB_CHAINS.get(target) ?? [];
+    return chain.length > 0 && done(chain[chain.length - 1]!);
+  };
+  let isOpen = (_target: number): boolean => true;
+  if (tier === 'first' || tier === 'second') {
+    if (targets.some(finished)) isOpen = finished;
+    else if (targets.some(begun)) isOpen = begun;
+  }
+  const slots: JobSlot[] = targets.map((target) => ({ job: target, open: isOpen(target) }));
   while (slots.length < 4) slots.push({ job: null, open: false });
   return slots;
 }

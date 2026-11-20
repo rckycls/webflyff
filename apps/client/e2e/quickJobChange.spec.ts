@@ -78,6 +78,31 @@ test('Quick Job Change pops up for a Lv15 Vagrant; Acrobat; Yes sends 0x8fff0130
   await expect(win).toBeHidden();
 });
 
+test('a 568 x 320 phone: the window and its Yes/No box whole above the task bar, Go! and the arrows finger-sized', async ({ page }) => {
+  test.skip(!isPhone(), 'a phone\'s layout');
+  await page.setViewportSize({ width: 568, height: 320 });
+  const { world } = script(15);
+  await playGateway(page, world, { jobPopup: true });
+  await enterFlaris(page);
+  const win = page.locator('.hud-quick-job');
+  await expect(win).toBeVisible();
+  await expectWhole(page, win);
+  for (const control of ['WIDC_GO"] button', 'WIDC_LEFT"]', 'WIDC_RIGHT"]']) {
+    const box = (await win.locator(`[data-control="${control}`).boundingBox())!;
+    expect(box.height, control).toBeGreaterThanOrEqual(28);
+    expect(box.width, control).toBeGreaterThanOrEqual(40);
+  }
+  // the words scroll inside their box
+  const words = win.locator('[data-control="WIDC_TEXT1"] .hud-res-text-body');
+  expect(await words.evaluate((el) => getComputedStyle(el).overflowY)).toBe('auto');
+  await press(win.locator('[data-control="WIDC_GO"] button'));
+  const box = page.locator('.hud-quick-job-confirm');
+  await expect(box).toBeVisible();
+  await expectWhole(page, box);
+  const yes = (await box.locator('[data-control="WIDC_YES"]').boundingBox())!;
+  expect(yes.height).toBeGreaterThanOrEqual(24);
+});
+
 test('a Lv14 Vagrant: no pop-up; Start -> Extras -> Job Change says the next change opens at level 15', async ({ page }) => {
   const { world } = script(14);
   const gateway = await playGateway(page, world, { jobPopup: true });

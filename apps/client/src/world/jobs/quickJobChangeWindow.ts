@@ -75,6 +75,8 @@ export interface QuickJobHost {
   sex(): number;
   /** Whether the quest is current or completed (the class lock). */
   started(questId: number): boolean;
+  /** Whether the quest is completed (a chain finished at the NPCs locks the window to its job). */
+  done(questId: number): boolean;
   /** One of the window's own lines in the chat. */
   say(text: string): void;
   /** QUICK_JOB_CHANGE: the job picked. */
@@ -155,7 +157,7 @@ export class QuickJobChangeWindow {
     const job = this.host.job();
     const tier = dueTier(job, this.host.level(), this.host.expPercent());
     if (tier === null) return false;
-    this.slots = jobSlots(job, tier, (questId) => this.host.started(questId));
+    this.slots = jobSlots(job, tier, (questId) => this.host.started(questId), (questId) => this.host.done(questId));
     this.picked = Math.max(0, this.slots.findIndex((slot) => slot.open));
     this.pressed = false;
     this.drawSlots();

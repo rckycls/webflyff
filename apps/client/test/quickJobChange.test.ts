@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  JOB_CHAINS, JOB_NAMES, dueTier, jobDescription, jobSlots, nextChangeLevel,
+  JOB_CHAINS, JOB_NAMES, dueTier, jobDescription, jobSlots, nextChangeLevel, ownExpPercent,
 } from '../src/world/jobs/quickJobChange';
 
 const none = (): boolean => false;
@@ -55,6 +55,13 @@ describe('jobSlots: four slots, the open ones by the class lock', () => {
     expect(open(slots)).toEqual([10]);
   });
 
+  it('a Mercenary who started Knight (163) and finished the Blade chain (172) sees only Blade open (no second gear set)', () => {
+    const started = (q: number): boolean => q === 163 || (q >= 168 && q <= 172);
+    expect(open(jobSlots(1, 'second', started, (q) => q === 172))).toEqual([7]);
+    // with neither finished, both started chains stay open
+    expect(open(jobSlots(1, 'second', started, none))).toEqual([6, 7]);
+  });
+
   it('a Knight at 120 sees Knight Master, a Blade Master sees Blade Hero, each with three locks', () => {
     expect(jobs(jobSlots(6, 'master', none))).toEqual([16, null, null, null]);
     expect(open(jobSlots(6, 'master', none))).toEqual([16]);
@@ -88,6 +95,12 @@ describe('the names, the texts and the chains', () => {
     expect(JOB_CHAINS.get(11)).toEqual([173, 174, 175, 176, 177]);
     expect(JOB_CHAINS.get(16)).toEqual([5022]);
     expect(JOB_CHAINS.get(24)).toEqual([5023]);
+  });
+
+  it('reads the own EXP % safely: 0 past the EXP table\'s top (a GM\'s level 250) instead of throwing', () => {
+    const table = Array.from({ length: 122 }, (_, i) => ({ exp1: BigInt(1000 * (i + 1)), exp2: 0n, fxp: 0, pxp: 0n, limitExp: 0n }));
+    expect(ownExpPercent(121_999n, 120, table as never)).toBe(9_999); // row 121 needs 122,000
+    expect(ownExpPercent(5n, 250, table as never)).toBe(0);
   });
 
   it('gives the next change\'s level', () => {

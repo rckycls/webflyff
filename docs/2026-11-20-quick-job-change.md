@@ -28,8 +28,11 @@ theme. except the blue text (follow our white title text rule). Make the theme f
   - V15's small arrows and Go!.
 - **Go!:** a V15 Yes/No box: "Become an Acrobat? This can't be undone." Yes sends the packet, and the World's job change
   closes the window.
-- **Class lock:** the same as the class NPCs'. A started chain leaves only that class open.
-- **Phone:** the same window, scaled to fit the screen above the task bar.
+- **Class lock:** the same as the class NPCs'. A started chain leaves only that class open, and a chain finished at the
+  NPCs (job not yet changed) leaves only its own job open, so no second gear set.
+- **Phone:** a compact panel over the open bag, as the Teleport window's: portraits as tall as the room allows (up to
+  112 px), three lines of words that scroll, V15's arrows half as large again, and Go! as the silver phone button. The
+  Yes/No buttons grow by 1.4.
 
 ## Files
 
@@ -99,7 +102,6 @@ $env:E2E_CLIENT_PORT='5187'; npm run test:e2e:client
 
 - The portraits use a stock face and hair, not the player's own (the owner picked pictures made ahead).
 - Bows are held low, so the Acrobat's and Ranger's bows are small in the picture.
-- On a very small phone (568 x 320) the window scales to about 0.8.
 - The quest window still doesn't list the custom job-change gear (the converter reads `data.res`). The chat shows each
   item.
 - With "translucent windows" on, the Yes/No box shows the window under it through its body, as the Awaken box does.

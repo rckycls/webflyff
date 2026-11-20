@@ -18,11 +18,12 @@ interface Fake extends QuickJobHost {
   sent: number[];
 }
 
-function host(job: number, level: number, expPercent = 0, started: readonly number[] = []): Fake {
+function host(job: number, level: number, expPercent = 0, started: readonly number[] = [], done: readonly number[] = []): Fake {
   return {
     said: [], sent: [],
     job: () => job, level: () => level, expPercent: () => expPercent, sex: () => 0,
-    started: (questId) => started.includes(questId),
+    started: (questId) => started.includes(questId) || done.includes(questId),
+    done: (questId) => done.includes(questId),
     say(text) { this.said.push(text); },
     send(picked) { this.sent.push(picked); },
   };
@@ -87,6 +88,13 @@ describe('the Quick Job Change window', () => {
     expect(slots(window).filter((slot) => slot.hasAttribute('data-locked')).map((slot) => slot.dataset.job)).toEqual(['1', '3', '4']);
     press(window, slots(window)[0]!);
     expect(picked(window)).toBe('Acrobat');
+  });
+
+  it('a Mercenary with the Knight chain begun and the Blade chain finished sees only Blade open', () => {
+    const window = made(host(1, 60, 0, [163], [168, 169, 170, 171, 172]));
+    window.open();
+    expect(picked(window)).toBe('Blade');
+    expect(slots(window).filter((slot) => slot.hasAttribute('data-locked')).map((slot) => slot.getAttribute('aria-label'))).toEqual(['Knight', 'Locked', 'Locked']);
   });
 
   it('a Mercenary at 60 sees Knight, Blade and two locks', () => {

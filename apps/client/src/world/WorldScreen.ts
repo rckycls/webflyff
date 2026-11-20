@@ -214,7 +214,7 @@ import { PET_FILTER_NONE, loadPetFilter, petFilterBlocks, savePetFilter } from '
 import { PetFilterWindow } from './hud/petFilterWindow';
 import { TeleportWindow } from './hud/teleportWindow'; // custom (owner 2026-11-19)
 import { QuickJobChangeWindow } from './jobs/quickJobChangeWindow'; // custom (owner 2026-11-20)
-import { dueTier, jobPopupOff, shouldPopUp } from './jobs/quickJobChange'; // custom (owner 2026-11-20)
+import { dueTier, jobPopupOff, ownExpPercent, shouldPopUp } from './jobs/quickJobChange'; // custom (owner 2026-11-20)
 import type { JobTier } from './jobs/quickJobChange'; // custom (owner 2026-11-20)
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { UpgradeCursor } from './items/upgradeCursor';
@@ -1565,7 +1565,7 @@ export class WorldScreen {
     if (own === undefined || window === undefined || data === undefined) return;
     if (this.quickJobJob !== null && own.job !== this.quickJobJob) window.jobChanged();
     this.quickJobJob = own.job;
-    const now = dueTier(own.job, own.level, expPercent(own.exp, expNeeded(data.exp, own.level)));
+    const now = dueTier(own.job, own.level, ownExpPercent(own.exp, own.level, data.exp));
     if (now !== this.quickJobTier) this.quickJobDismissed = false;
     if (now === null && window.isOpen) window.jobChanged();
     const shown = login || this.stageDrawn;
@@ -2625,9 +2625,11 @@ export class WorldScreen {
     this.quickJobWindow = new QuickJobChangeWindow({
       job: () => this.own?.job ?? 0,
       level: () => this.own?.level ?? 0,
-      expPercent: () => (this.own === undefined ? 0 : expPercent(this.own.exp, expNeeded(this.data!.exp, this.own.level))),
+      expPercent: () => (this.own === undefined ? 0 : ownExpPercent(this.own.exp, this.own.level, this.data!.exp)),
       sex: () => this.own?.sex ?? 0,
       started: (questId) => this.own !== undefined && (this.own.quests.has(questId) || this.own.completedQuests.includes(questId)),
+      // completed, or still a current quest at QS_END (14), as the World's QjcDone
+      done: (questId) => this.own !== undefined && (this.own.completedQuests.includes(questId) || this.own.quests.get(questId)?.state === 14),
       say: (text) => this.hud?.messages.add(text, this.data?.texts.get('TID_GAME_LACKMONEY')?.color ?? 0xffffffff),
       send: (job) => this.session.sendQuickJobChange(job),
     }, this.hudArt!, doc);
