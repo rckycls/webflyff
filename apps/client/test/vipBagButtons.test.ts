@@ -2,8 +2,12 @@
 // custom (owner 2026-11-19, VIP perks): the bag's two VIP icon buttons beside the penya, sort and Penya -> Perin, for
 // VIP1-VIP4 only (hidden for everyone else), and the bag's new order after the server's sort.
 import { describe, expect, it, vi } from 'vitest';
+import { ServerClock } from '../src/net/serverClock';
 import { InventoryWindow } from '../src/world/hud/inventoryWindow';
-import { newVagrant, ownGameData } from './helpers/ownState';
+import { OwnState } from '../src/world/OwnState';
+import { terrainGround } from '../src/world/sim/collision';
+import { WorldState } from '../src/world/WorldState';
+import { OWN_ID, STARTER_EQUIPMENT, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
 
 const open = (vipLevel: number, gold: number) => {
   const own = newVagrant();
@@ -77,5 +81,23 @@ describe('the bag after the server sorts it', () => {
     own.apply({ type: 'vipInventorySort', slots: [1] }, own.objectId + 1);
     own.apply({ type: 'vipInventorySort', slots: new Array(200).fill(1) }, own.objectId);
     expect(own.inventorySlots.slice(0, 3)).toEqual(order);
+  });
+
+  // 2026-11-20 (owner: "The sort inventory button is not working"): the game hands every bundle message to WorldState,
+  // which passes the own bag's messages on to OwnState; the sort's answer was read but never passed on, so the bag
+  // stayed as it was until a relog
+  it('reaches the bag from the world, as the game hands it the server\'s answer', () => {
+    const data = ownGameData();
+    const added = ownAdded();
+    const own = new OwnState(data, added, STARTER_EQUIPMENT);
+    const world = new WorldState(data, new ServerClock(() => 0), terrainGround(() => 0), own);
+    world.apply(OWN_ID, { type: 'addMover', mover: added }, true);
+    const before = [...own.inventorySlots];
+    const revision = own.inventoryRevision;
+    const order = [5, 3, 0xffffffff];
+    world.apply(OWN_ID, { type: 'vipInventorySort', slots: [...order, ...before.slice(3, 42)] });
+    expect(own.inventorySlots.slice(0, 3)).toEqual(order);
+    expect(own.inventorySlots.slice(42)).toEqual(before.slice(42));
+    expect(own.inventoryRevision).toBeGreaterThan(revision);
   });
 });
