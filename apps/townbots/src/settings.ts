@@ -63,6 +63,8 @@ export interface TownBotsSettings {
   listenPort: number;
   assetsDir: string;
   logFile: string;
+  /** Where the bots write what they hold of their supplies (for a refill), if anywhere. */
+  stockFile?: string;
   roleTargets: Record<Role, number>;
   bots: BotSpec[];
   replies: string[];
@@ -114,17 +116,11 @@ function vec(value: unknown, path: string): Vec3 {
 const ints = (value: unknown, path: string): number[] => arr(value, path).map((v, i) => int(v, `${path}[${i}]`, 0));
 const vecs = (value: unknown, path: string): Vec3[] => arr(value, path).map((v, i) => vec(v, `${path}[${i}]`));
 
-/** One capital letter, the rest lower case (the bots' name style). */
-export function hasOneCapital(name: string): boolean {
-  return (name.match(/[A-Z]/g) ?? []).length === 1;
-}
-
 function bot(value: unknown, path: string): BotSpec {
   const b = obj(value, path);
   const name = str(b.name, `${path}.name`);
   const refused = validateCharacterName(name);
   if (refused !== undefined) fail(`${path}.name`, `is refused by the game: ${refused}`);
-  if (!hasOneCapital(name)) fail(`${path}.name`, 'must have exactly one capital letter');
   const group = b.group as Group;
   if (!GROUPS.includes(group)) fail(`${path}.group`, `must be one of ${GROUPS.join(', ')}`);
   // the GM /level command's own ranges (FuncTextCmd.cpp TextCmd_Level): up to 15 is a Vagrant, 16-60 a first job
@@ -228,6 +224,7 @@ export function parseSettings(json: unknown): TownBotsSettings {
     listenPort: root.listenPort === undefined ? DEFAULT_PORT : int(root.listenPort, 'listenPort', 1, 65535),
     assetsDir: str(root.assetsDir, 'assetsDir'),
     logFile: str(root.logFile, 'logFile'),
+    ...(root.stockFile === undefined ? {} : { stockFile: str(root.stockFile, 'stockFile') }),
     roleTargets, bots, replies,
     places: places(root.places, 'places'),
     items: items(root.items, 'items'),

@@ -19,6 +19,7 @@ import type { FarmControl, RoleIo, RoleRunner } from './roles/types';
 import { groundDistance } from './roles/types';
 import { SafetyNet } from './safety';
 import { gearToEquip } from './setup';
+import { supplyCounts } from './stock';
 import type { Role, TownBotsSettings } from './settings';
 
 /** The bots' world: Flaris is in Madrigal (`WI_WORLD_MADRIGAL`). */
@@ -135,6 +136,14 @@ export class BotController {
       return;
     }
     if (this.runner.tick() === 'done') this.nextRole(true);
+  }
+
+  /** What the bot holds of `ids` (not worn), while it is in the world. */
+  supplies(ids: readonly number[]): Record<number, number> | undefined {
+    const own = this.body.own();
+    if (!this.body.playing || own === undefined || own.inventory === null) return undefined;
+    const worn = new Set(own.equipmentObjectIds);
+    return supplyCounts(new Map([...own.inventory].filter(([id]) => !worn.has(id))), ids);
   }
 
   /** The bot left the world (or is changing worlds): its role ends and is free. */

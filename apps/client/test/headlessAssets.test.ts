@@ -32,8 +32,8 @@ describe('DiskAssets.open(dir)', () => {
 
 describe('newCharacter', () => {
   it('keeps the name, the sex and the look it is given', () => {
-    const made = newCharacter(0, 'abCd', '1234', { sex: 1, hair: 2, face: 3 });
-    expect(made.name).toBe('abCd');
+    const made = newCharacter(0, 'Abcd', '1234', { sex: 1, hair: 2, face: 3 });
+    expect(made.name).toBe('Abcd');
     expect(made.sex).toBe(1);
     expect(made.hairMesh).toBe(2);
     expect(made.headMesh).toBe(3);

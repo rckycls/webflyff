@@ -12,9 +12,9 @@ function valid(): Record<string, any> {
     logFile: 'C:/game/logs/bots.log',
     roleTargets: { farming: 1, wandering: 1, upgrading: 0, shop: 0, afk: 1 },
     bots: [
-      { account: 'testbot01', password: 'pw-one-1', bankPin: '1234', name: 'abCd', group: 'rookie', level: 9, job: 0, look: { sex: 0, hair: 1, face: 2 } },
-      { account: 'testbot02', password: 'pw-two-2', bankPin: '4321', name: 'efGh', group: 'first', level: 16, job: 1, look: { sex: 1, hair: 0, face: 0 } },
-      { account: 'testbot03', password: 'pw-three', bankPin: '1111', name: 'ijkL', group: 'veteran', level: 65, job: 6, look: { sex: 0, hair: 3, face: 1 } },
+      { account: 'testbot01', password: 'pw-one-1', bankPin: '1234', name: 'Abcd', group: 'rookie', level: 9, job: 0, look: { sex: 0, hair: 1, face: 2 } },
+      { account: 'testbot02', password: 'pw-two-2', bankPin: '4321', name: 'Efgh', group: 'first', level: 16, job: 1, look: { sex: 1, hair: 0, face: 0 } },
+      { account: 'testbot03', password: 'pw-three', bankPin: '1111', name: 'Ijkl', group: 'veteran', level: 65, job: 6, look: { sex: 0, hair: 3, face: 1 } },
     ],
     replies: ['hello!', 'hi there'],
     places: {
@@ -42,8 +42,6 @@ describe('parseSettings', () => {
     ['no bots', (v) => { v.bots = []; }, /bots/],
     ['one account twice', (v) => { v.bots[1].account = 'TESTBOT01'; }, /bots\[1\]\.account/],
     ['a name the game refuses', (v) => { v.bots[0].name = 'ab'; }, /bots\[0\]\.name/],
-    ['a name with two capitals', (v) => { v.bots[0].name = 'AbCd'; }, /bots\[0\]\.name/],
-    ['a name with no capital', (v) => { v.bots[0].name = 'abcd'; }, /bots\[0\]\.name/],
     ['a veteran below 61', (v) => { v.bots[2].level = 60; }, /bots\[2\]\.level/],
     ['a first job at 15 (the game makes it a Vagrant)', (v) => { v.bots[1].level = 15; }, /bots\[1\]\.level/],
     ['a rookie with a job', (v) => { v.bots[0].job = 1; }, /bots\[0\]\.job/],
@@ -84,5 +82,14 @@ describe('loadSettings', () => {
     expect(s.places.town).toHaveLength(2);
     expect(s.items.potions).toEqual([2000]);
     expect(s.replies).toEqual(['hello!', 'hi there']);
+  });
+});
+
+describe('the stock file', () => {
+  it('is optional, and a path when given', () => {
+    const v = valid();
+    expect(parseSettings(v).stockFile).toBeUndefined();
+    v.stockFile = 'C:/game/stock.json';
+    expect(parseSettings(v).stockFile).toBe('C:/game/stock.json');
   });
 });

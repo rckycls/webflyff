@@ -1,8 +1,6 @@
 // The town bots' program.
 //   --config <settings.json>             run every bot until stopped (Ctrl+C, or the service's stop)
 //   --config <settings.json> --setup     make each bot's character and give it its level and job (accounts GM for it)
-//   --pick-names --names <file> --taken <file> --count <n>
-//                                        print n names styled as the bots' (one capital), none of them taken
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import type { WorldManifest } from '@flyffweb/formats';
@@ -19,12 +17,12 @@ import { BotController } from './controller';
 import type { BotWorld } from './controller';
 import { fileLog } from './log';
 import type { Log } from './log';
-import { pickNames, shuffled, styleName } from './names';
 import { RolePlanner } from './roles';
 import { SpotBook } from './roles/farm';
 import { Runner } from './runner';
 import type { BotHandle } from './runner';
 import { loadSettings } from './settings';
+import { writeStock } from './stock';
 import type { TownBotsSettings } from './settings';
 import { runSetup } from './setupRun';
 
@@ -32,16 +30,6 @@ import { runSetup } from './setupRun';
 const ORIGIN = 'http://townbots.localhost';
 /** The placed objects are loaded once per world, this many tiles around the lodestar. */
 const OBJECTS_RADIUS = 2;
-
-function lines(path: string): string[] {
-  return readFileSync(path, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '');
-}
-
-function pickNamesCli(names: string, taken: string, count: number): void {
-  const takenSet = new Set(lines(taken).map((name) => name.toLowerCase()));
-  const picked = pickNames(shuffled(lines(names), Math.random), count, (name) => takenSet.has(name.toLowerCase()));
-  for (const name of picked) process.stdout.write(`${styleName(name, Math.random)}\n`);
-}
 
 /** The bots' own gateway: the public one's routes, on loopback only, for one origin, with room for every bot. */
 function botGatewayConfig(settings: TownBotsSettings): { config: GatewayConfig; certifierAddress: string } {
@@ -96,14 +84,8 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       config: { type: 'string' }, setup: { type: 'boolean' },
-      'pick-names': { type: 'boolean' }, names: { type: 'string' }, taken: { type: 'string' }, count: { type: 'string' },
     },
   });
-  if (values['pick-names'] === true) {
-    if (values.names === undefined || values.taken === undefined || values.count === undefined) throw new Error('--pick-names needs --names, --taken and --count');
-    pickNamesCli(values.names, values.taken, Number(values.count));
-    return;
-  }
   if (values.config === undefined) throw new Error('usage: townbots --config <settings.json> [--setup]');
   const settings = loadSettings(values.config);
   const log = fileLog(settings.logFile);
@@ -160,11 +142,26 @@ async function main(): Promise<void> {
     cpu = process.cpuUsage();
     at = now;
   }, 600_000);
+  // what each bot holds of its supplies, for a refill (every 5 minutes, and at the stop)
+  const items = settings.items;
+  const supplyIds = [...new Set([...items.potions, ...items.upgrade.materials, ...items.upgrade.spares, ...items.shop.map((s) => s.itemId)])];
+  const stock = new Map<string, Record<number, number>>();
+  const saveStock = (): void => {
+    if (settings.stockFile === undefined) return;
+    for (const c of controllers) {
+      const counts = c.supplies(supplyIds);
+      if (counts !== undefined) stock.set(c.body.spec.account, counts);
+    }
+    try { writeStock(settings.stockFile, stock); } catch (error) { log(`the stock file could not be written: ${(error as Error).message}`); }
+  };
+  const stockTimer = setInterval(saveStock, 300_000);
   let stopping = false;
   const stop = (): void => {
     if (stopping) return;
     stopping = true;
     clearInterval(usage);
+    clearInterval(stockTimer);
+    saveStock();
     log('stopping: every bot leaves');
     void runner.stop().then(() => gateway.close()).finally(() => process.exit(0));
   };

@@ -15,8 +15,8 @@ describe('fileLog', () => {
     dir = mkdtempSync(join(tmpdir(), 'log-'));
     const file = join(dir, 'bots.log');
     const log = fileLog(file, { echo: false, now: () => new Date('2026-11-20T08:00:00Z') });
-    log('abCd entered');
-    expect(readFileSync(file, 'utf8')).toBe('2026-11-20 16:00:00 abCd entered\n');
+    log('Abcd entered');
+    expect(readFileSync(file, 'utf8')).toBe('2026-11-20 16:00:00 Abcd entered\n');
   });
 
   it('keeps the newer half once the file passes its cap', () => {

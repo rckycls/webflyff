@@ -23,7 +23,7 @@ async function main(): Promise<void> {
   // the places file alone, checked as the settings check it (a minimal settings object around it)
   const places = parseSettings({
     gatewayConfig: '-', assetsDir: '-', logFile: '-', roleTargets: { farming: 0, wandering: 0, upgrading: 0, shop: 0, afk: 0 },
-    bots: [{ account: 'check', password: 'check', bankPin: '0000', name: 'chEck', group: 'rookie', level: 1, job: 0, look: { sex: 0, hair: 0, face: 0 } }],
+    bots: [{ account: 'check', password: 'check', bankPin: '0000', name: 'Check', group: 'rookie', level: 1, job: 0, look: { sex: 0, hair: 0, face: 0 } }],
     replies: ['-'], items: { potions: [], upgrade: { materials: [], spares: [] }, shop: [], shopTitles: [] },
     places: JSON.parse(readFileSync(placesPath, 'utf8')) as unknown,
   }).places;
