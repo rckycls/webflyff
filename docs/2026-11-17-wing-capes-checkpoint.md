@@ -42,7 +42,8 @@ level 1); GM only for now (`/ci`); tradeable and permanent; hidden while flying.
   Spine2, at the Neck. It adds nothing to the body's box (the name tag stays put).
 - `moverModels.ts` `wingCape`: the wings keep their own skeleton and load their `_stand` and `_walk` motions, posed at the
   stand's first frame for pictures drawn once.
-- `wingCapes.ts`: `playWing` (stand while still, walk while walking or running, blended), and the fit table.
+- `wingCapes.ts`: `playWing` (idle while standing with nothing going on, stand while swinging or casting, walk while
+  walking or running, blended; 2026-11-20), `idleOf`, and the fit table.
 - `MoverViews`: every frame the wings flap; while the wearer flies (`OBJSTAF_FLY`) they are hidden.
 - Everywhere held items are drawn gets it: own character, other players (both bodies), the bag's preview, character select
   (flapping too), the beauty shop. Tooltips are the normal cloak tooltip (name, stats, description, icon).
@@ -54,16 +55,26 @@ flier's place left the butterfly tails on the floor and the prophet feathers acr
 
 | Wings | back | up | scale |
 |---|---|---|---|
-| Feather 01/02 | 0.1 | -0.18 | 0.9 |
-| Angel 01/02 | 0.11 | -0.18 | 0.85 |
-| Prophet 01/02 | 0.14 | -0.14 | 0.55 |
-| Butterfly 01-04 | 0.08 | -0.16 | 0.58 |
-| Dragonfly | 0.06 | -0.16 | 0.8 |
+| Feather 01/02 | 0.06 | -0.12 | 0.9 |
+| Angel 01/02 | 0.09 | -0.12 | 0.85 |
+| Prophet 01/02 | 0.09 | -0.08 | 0.55 |
+| Butterfly 01-04 | 0.04 | -0.1 | 0.58 |
+| Dragonfly | 0.03 | -0.1 | 0.8 |
 
 2026-11-18 (branch `wing-capes-lower`): the owner found them "way too high, almost at the back of the neck". The table
 above is the lowered fit: the wing roots sit 0.14 to 0.18 below the Neck (the Neck is 0.205 above Spine2), on the shoulder
 blades; the bigger wings sit further off the back and smaller, so their lower parts stay off the legs. Before, every
 family was raised 0.04 to 0.3 above the Neck. No convert or gear sync is needed for this change.
+
+2026-11-20 (branch `wing-capes-up`): the owner found the lowered fit "a little low". Every family is raised 0.06, so the
+roots sit 0.08 to 0.12 below the Neck (the table above). The owner also asked for them "a little more closer" to the back:
+each sits 0.03 to 0.09 off it now, as close as the swinging arms allow (the angel wings stay at 0.09: at 0.06 a man's
+elbow went through them mid-swing). Sizes are unchanged.
+
+Idle (same day, the owner: "little to no movement when just standing and not doing anything"): `idleOf` makes each
+wing's stand motion near still (15% of its movement, twice as slow, from the same first pose). Standing with nothing
+going on plays it; a swing or a cast plays the stand flap; walking or running the walk. The bag preview, character select
+and the beauty shop show the idle's first pose (the stand's). No convert or gear sync: client code only.
 
 The same for men and women. The tuning page was temporary and is not in the repo (the session notes folder has a copy).
 

@@ -39,7 +39,7 @@ export const CREATE_BOX = { width: 270, height: 305 } as const;
 interface Dressed {
   model: AssembledCharacter;
   motions: Map<number, LoopedMotion | null>;
-  /** 2026-11-17: the wing cape's wings, flapping their stand motion. */
+  /** 2026-11-17: the wing cape's wings, playing their idle (2026-11-20). */
   wings: WingMotions[];
   release(): void;
 }

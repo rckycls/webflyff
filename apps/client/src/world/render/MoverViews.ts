@@ -42,6 +42,7 @@ import {
 } from './sparks';
 import type { SparkInfo, SparkUniforms } from './sparks';
 import { playWing } from './wingCapes';
+import type { WingMotion } from './wingCapes';
 
 /** `m_fBlendWeight += 0.05f` a frame move (`CModelObject::FrameMove`, `ModelObject.cpp:1749-1754`): 20 steps of blending. */
 const BLEND_SECONDS = 20 / STEPS_PER_SECOND;
@@ -884,7 +885,9 @@ export class MoverViews {
     const act = view.mover.act;
     const flying = (act.stateFlag & ObjStaF.FLY) !== 0;
     const move = act.state & ObjSta.MOVE_ALL;
-    const want = move === ObjSta.FMOVE || move === ObjSta.BMOVE ? 'walk' : 'stand';
+    // 2026-11-20: near still (`idle`) while it stands with nothing going on; the stand flap while it swings or casts
+    const want: WingMotion = move === ObjSta.FMOVE || move === ObjSta.BMOVE ? 'walk'
+      : (act.state & ObjSta.ATK_ALL) !== 0 ? 'stand' : 'idle';
     for (const held of view.held) {
       if (held.slot !== 'back') continue;
       held.item.visible = !flying;
@@ -931,7 +934,7 @@ export class MoverViews {
   }
 
   /** 2026-11-17 (wing capes, for the tests): the wing capes on the movers' backs, whether drawn, and their motion. */
-  wingCapes(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: 'stand' | 'walk' | null }> {
+  wingCapes(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: WingMotion | null }> {
     return [...this.views.values()].flatMap((view) => view.held.flatMap((held) =>
       held.slot === 'back' && held.item.parent !== null
         ? [{ objectId: view.mover.objectId, itemId: view.look?.held.back ?? -1, drawn: held.item.visible, playing: held.wing?.playing ?? null }]
