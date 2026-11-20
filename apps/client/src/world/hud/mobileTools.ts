@@ -114,27 +114,8 @@ export class MobileTools {
         icon.style.backgroundImage = `url(${JSON.stringify(url)})`;
         button.append(icon);
       }
-      // 2026-11-20 (owner, "allow opening a window while walking on mobile"): a phone makes no click of a second finger's
-      // tap while the first holds the joystick, so a finger's lift on the icon runs it (as Attack takes its press,
-      // attackButton.ts) and the click a lone tap brings after it does nothing; a mouse or a key runs it on its click
-      let finger: number | null = null;
-      let fingerRanAt = -Infinity;
-      const go = (): void => { run(); button.blur(); };
-      button.addEventListener('pointerdown', (event) => { if (event.pointerType === 'touch') finger = event.pointerId; });
-      button.addEventListener('pointercancel', (event) => { if (event.pointerId === finger) finger = null; });
-      button.addEventListener('pointerup', (event) => {
-        if (event.pointerId !== finger) return;
-        finger = null;
-        const box = button.getBoundingClientRect();
-        const on = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
-        if (!on) return; // the finger slid off the icon
-        fingerRanAt = performance.now();
-        go();
-      });
-      button.addEventListener('click', () => {
-        if (performance.now() - fingerRanAt < FINGER_CLICK_MS) return;
-        go();
-      });
+      // (2026-11-20: a second finger's tap, while the first walks, clicks it too: secondFingerTaps.ts)
+      button.addEventListener('click', () => { run(); button.blur(); });
       return button;
     });
     element.append(...this.buttons);
@@ -156,9 +137,6 @@ export class MobileTools {
     this.root.style.setProperty('--hud-mobile-icon', `${iconCssSize(this.view?.devicePixelRatio ?? 1)}px`);
   };
 }
-
-/** How long after a finger ran a shortcut the click a phone adds to a lone tap is ignored (ms). */
-const FINGER_CLICK_MS = 700;
 
 // 2026-11-20 (owner, "remove ranking icon on top right for desktop"): the desktop's Siege Ranking button left of the
 // Navigator (2026-11-15) is gone; its window opens from the Start menu.

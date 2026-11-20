@@ -7,13 +7,6 @@ import { AppId } from '../src/world/hud/applets';
 import type { UiArt } from '../src/world/hud/art';
 import { MOBILE_SHORTCUTS, MobileTools, iconCssSize } from '../src/world/hud/mobileTools';
 
-/** A finger's pointer event (jsdom's boxes are all 0 x 0 at 0, 0: (0, 0) is on a button, anything else off it). */
-function finger(type: string, id: number, x = 0, y = 0): Event {
-  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
-  Object.defineProperties(event, { pointerType: { value: 'touch' }, pointerId: { value: id } });
-  return event;
-}
-
 const art = (have: (key: string) => boolean = () => true): UiArt => ({
   url: (key) => (have(key) ? `/assets/${key}` : ''),
   sheets: null,
@@ -168,39 +161,5 @@ describe('iconCssSize', () => {
   it('is 32 for a ratio it cannot read', () => {
     expect(iconCssSize(Number.NaN)).toBe(32);
     expect(iconCssSize(0)).toBe(32);
-  });
-});
-
-describe('a finger on a shortcut (2026-11-20, owner: "allow opening a window while walking on mobile")', () => {
-  it("runs it on the finger's lift, and the click a phone adds after a lone tap does nothing", () => {
-    const { run, tools, button } = rig();
-    button('Bag').dispatchEvent(finger('pointerdown', 7));
-    expect(run.bag).not.toHaveBeenCalled();
-    button('Bag').dispatchEvent(finger('pointerup', 7));
-    expect(run.bag).toHaveBeenCalledOnce();
-    button('Bag').click();
-    expect(run.bag).toHaveBeenCalledOnce();
-    tools.dispose();
-  });
-
-  it("runs it for a second finger's tap, which brings no click while the first holds the joystick", () => {
-    const { run, tools, button } = rig();
-    button('Skill').dispatchEvent(finger('pointerdown', 2));
-    button('Skill').dispatchEvent(finger('pointerup', 2));
-    expect(run.skill).toHaveBeenCalledOnce();
-    tools.dispose();
-  });
-
-  it('runs nothing for a finger that slid off the icon, or another finger lifting, or a cancelled press', () => {
-    const { run, tools, button } = rig();
-    button('Bag').dispatchEvent(finger('pointerdown', 3));
-    button('Bag').dispatchEvent(finger('pointerup', 3, 40, 40));
-    button('Bag').dispatchEvent(finger('pointerdown', 4));
-    button('Bag').dispatchEvent(finger('pointerup', 5));
-    button('Bag').dispatchEvent(finger('pointerdown', 6));
-    button('Bag').dispatchEvent(finger('pointercancel', 6));
-    button('Bag').dispatchEvent(finger('pointerup', 6));
-    expect(run.bag).not.toHaveBeenCalled();
-    tools.dispose();
   });
 });

@@ -3,13 +3,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AutoButton, flashStoppedTitle } from '../src/world/hud/autoPlay/autoButton';
 
-/** A finger's pointer event (jsdom's boxes are all 0 x 0 at 0, 0: (0, 0) is on a button, anything else off it). */
-function finger(type: string, id: number, x = 0, y = 0): Event {
-  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
-  Object.defineProperties(event, { pointerType: { value: 'touch' }, pointerId: { value: id } });
-  return event;
-}
-
 afterEach(() => { document.body.replaceChildren(); });
 
 function rig() {
@@ -68,30 +61,6 @@ describe('AutoButton', () => {
 });
 
 describe('AutoButton on a phone (M4)', () => {
-  it("a finger's lift starts it (a second finger's too, while the first walks), and the click after it does nothing", () => {
-    const { button, play } = rig();
-    button.element.dispatchEvent(finger('pointerdown', 2));
-    button.element.dispatchEvent(finger('pointerup', 2));
-    expect(play.farm).toBe('running');
-    button.element.click();
-    expect(play.farm).toBe('running');
-  });
-
-  it("a finger's long press opens the window and its lift starts nothing", () => {
-    vi.useFakeTimers();
-    try {
-      const { button, play, opened } = rig();
-      button.element.dispatchEvent(finger('pointerdown', 3));
-      vi.advanceTimersByTime(500);
-      expect(opened()).toBe(1);
-      button.element.dispatchEvent(finger('pointerup', 3));
-      button.element.click();
-      expect(play.farm).toBe('off');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it('a long press (500 ms) opens the window and the click after it starts nothing; a short tap starts', () => {
     vi.useFakeTimers();
     try {

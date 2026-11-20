@@ -4,8 +4,8 @@
 // bar; phone: above the quick slot over Attack (style.css).
 // 2026-11-20 (owner, "move Autoplay button icon to the place of Auto icon. Add an active autoplay indicator like a glow
 // animation or rotate glow"): the button is Auto Play's own icon (the gear with the play sign, src/icons/big), no word;
-// while the farm bot runs a gold glow turns round it (style.css); the "!" after a stop is a red badge. A finger's lift
-// starts or stops it, so a second finger can while the first walks (as the window shortcuts, mobileTools.ts).
+// while the farm bot runs a gold glow turns round it (style.css); the "!" after a stop is a red badge. (A second finger's
+// tap, while the first walks, clicks it too: secondFingerTaps.ts.)
 
 import autoPlayIcon from '../../../icons/big/icon_autoplay.png';
 
@@ -26,9 +26,6 @@ export class AutoButton {
   /** A press held for LONG_PRESS_MS opens the window; the click that ends it does nothing. */
   private holdTimer: ReturnType<typeof setTimeout> | undefined;
   private longPressed = false;
-  /** The finger pressing the button, and when a finger's lift last started or stopped the farm bot (its click then does nothing). */
-  private finger: number | null = null;
-  private fingerRanAt = -Infinity;
 
   constructor(private readonly play: AutoButtonPlay, private readonly openWindow: () => void, doc: Document = document) {
     const button = doc.createElement('button');
@@ -44,31 +41,19 @@ export class AutoButton {
     button.append(icon, this.mark);
     button.addEventListener('click', () => {
       if (this.longPressed) { this.longPressed = false; return; }
-      if (performance.now() - this.fingerRanAt < FINGER_CLICK_MS) return;
       this.toggle();
     });
-    button.addEventListener('pointerdown', (event) => {
+    button.addEventListener('pointerdown', () => {
       this.longPressed = false;
-      if (event.pointerType === 'touch') this.finger = event.pointerId;
       clearTimeout(this.holdTimer);
       this.holdTimer = setTimeout(() => {
         this.longPressed = true;
         this.openWindow();
       }, LONG_PRESS_MS);
     });
-    button.addEventListener('pointerup', (event) => {
-      if (event.pointerType !== 'touch' || event.pointerId !== this.finger) return;
-      this.finger = null;
-      if (this.longPressed) return;
-      const box = button.getBoundingClientRect();
-      if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) return;
-      this.fingerRanAt = performance.now();
-      this.toggle();
-    });
     for (const end of ['pointerup', 'pointercancel', 'pointerleave']) {
       button.addEventListener(end, () => clearTimeout(this.holdTimer));
     }
-    button.addEventListener('pointercancel', (event) => { if (event.pointerId === this.finger) this.finger = null; });
     button.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       if (!this.longPressed) this.openWindow(); // a phone's long press may also bring a contextmenu
@@ -100,8 +85,6 @@ export class AutoButton {
 
 /** How long a press opens the window instead of starting (ms). */
 export const LONG_PRESS_MS = 500;
-/** How long after a finger's lift ran the button the click a phone adds to a lone tap is ignored (ms). */
-const FINGER_CLICK_MS = 700;
 
 const STOPPED_TITLE = '(!) Stopped - ';
 

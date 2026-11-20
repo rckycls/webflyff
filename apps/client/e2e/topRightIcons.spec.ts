@@ -241,10 +241,27 @@ test('top-right shortcuts: the important Start-menu icons in two rows of five on
   await page.evaluate(() => window.__client!.step(10));
   const walked = await ownAt(page);
   expect(Math.hypot(walked[0] - walking[0], walked[2] - walking[2]), 'the walk goes on').toBeGreaterThan(.5);
-  // (the open bag covers its own icon: with the joystick let go, its X closes it)
-  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await page.locator('.hud-inventory .hud-window-close').tap();
+  // and its X (the open bag covers its own icon) closes it with a second finger too, the walk going on: every button
+  // takes a second finger's tap (2026-11-20, owner: "make every window button work with a second finger while walking")
+  const close = (await page.locator('.hud-inventory .hud-window-close').boundingBox())!;
+  const closeFinger = { id: 3, x: close.x + close.width / 2, y: close.y + close.height / 2 };
+  const closeAt = Date.now() / 1000;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', timestamp: closeAt, touchPoints: [held, closeFinger] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', timestamp: closeAt + .08, touchPoints: [closeFinger] });
   await expect(page.locator('.hud-inventory')).toBeHidden();
+  await page.evaluate(() => window.__client!.step(10));
+  const still = await ownAt(page);
+  expect(Math.hypot(still[0] - walked[0], still[2] - walked[2]), 'the walk goes on after the X').toBeGreaterThan(.5);
+  // the Start button too: its menu opens
+  const start = (await page.getByRole('button', { name: 'Start' }).boundingBox())!;
+  const startFinger = { id: 4, x: start.x + start.width / 2, y: start.y + start.height / 2 };
+  const startAt = Date.now() / 1000;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', timestamp: startAt, touchPoints: [held, startFinger] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', timestamp: startAt + .08, touchPoints: [startFinger] });
+  await expect(page.getByRole('menu').first()).toBeVisible();
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.getByRole('button', { name: 'Start' }).tap();
+  await expect(page.getByRole('menu')).toHaveCount(0);
   await session.detach();
   await expectAutoButton(page, info, 'phone');
 
