@@ -243,11 +243,11 @@ function items(value: unknown, path: string): ItemPlan {
   };
 }
 
-/** A word of a name: letters only, 2 to 12. */
-function words(value: unknown, path: string): string[] {
+/** A word of a name: letters only, `min` to 12 (a name that stands alone is 4 at least: the game takes 4 to 16). */
+function words(value: unknown, path: string, min = 2): string[] {
   const list = arr(value, path).map((v, i) => {
     const word = str(v, `${path}[${i}]`);
-    if (!/^[A-Za-z]{2,12}$/.test(word)) fail(`${path}[${i}]`, 'must be 2 to 12 letters');
+    if (!new RegExp(`^[A-Za-z]{${min},12}$`).test(word)) fail(`${path}[${i}]`, `must be ${min} to 12 letters`);
     return word;
   });
   if (list.length === 0) fail(path, 'must hold at least one word');
@@ -256,7 +256,12 @@ function words(value: unknown, path: string): string[] {
 
 function names(value: unknown, path: string): NameWords {
   const n = obj(value, path);
-  return { adjectives: words(n.adjectives, `${path}.adjectives`), nouns: words(n.nouns, `${path}.nouns`), titles: words(n.titles, `${path}.titles`) };
+  return {
+    names: words(n.names, `${path}.names`, 4),
+    words: words(n.words, `${path}.words`, 4),
+    first: words(n.first, `${path}.first`),
+    second: words(n.second, `${path}.second`),
+  };
 }
 
 function setup(value: unknown, path: string): SetupPlan {
