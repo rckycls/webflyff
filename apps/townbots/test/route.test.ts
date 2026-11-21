@@ -52,4 +52,36 @@ describe('TownWalk', () => {
     expect(io.calls).toEqual(['walk 30,0,0', 'walk 30,0,40']);
     expect(status).toBe('arrived');
   });
+
+  it('stuck on the way, tries again from the next nearest place, up to 8 starts, then fails', async () => {
+    const { TownWalk } = await import('../src/roles/route');
+    const io = fakeIo();
+    io.stuck = true;
+    const starts: number[] = [];
+    io.pathTo = (target, skip = 0) => { starts.push(skip); return [[10 + skip * 10, 0, 0], target]; };
+    const walk = new TownWalk([200, 0, 0], io);
+    let status = 'walking';
+    for (let t = 0; t <= 400_000 && status === 'walking'; t += 1000) {
+      io.t = t;
+      status = walk.tick();
+    }
+    expect(starts).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(status).toBe('failed');
+  });
+
+  it('arrives on a later start once that way is clear', async () => {
+    const { TownWalk } = await import('../src/roles/route');
+    const io = fakeIo();
+    io.stuck = true;
+    const starts: number[] = [];
+    io.pathTo = (target, skip = 0) => { starts.push(skip); if (skip > 0) io.stuck = false; return [[10 + skip * 10, 0, 0], target]; };
+    const walk = new TownWalk([200, 0, 0], io);
+    let status = 'walking';
+    for (let t = 0; t <= 100_000 && status === 'walking'; t += 1000) {
+      io.t = t;
+      status = walk.tick();
+    }
+    expect(starts).toEqual([0, 1]);
+    expect(status).toBe('arrived');
+  });
 });

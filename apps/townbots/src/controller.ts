@@ -325,7 +325,7 @@ export class BotController {
       dead: () => { const s = self(); return s !== undefined && isDie(s); },
       hpRatio: () => { const own = body.own(); return own === undefined || own.maxHp() <= 0 ? 1 : own.hp / own.maxHp(); },
       walkTo: (pos) => body.walkTo(pos),
-      pathTo: (target) => { const at = self()?.act.body.pos as Vec3 | undefined; return at === undefined ? [target] : this.w.town.path(at, target); },
+      pathTo: (target, skip) => { const at = self()?.act.body.pos as Vec3 | undefined; return at === undefined ? [target] : this.w.town.path(at, target, skip); },
       pickPlace: (candidates) => this.w.places.take(this.key, candidates, this.w.random),
       combatStance: () => { if (((self()?.act.stateFlag ?? 0) & ObjStaF.COMBAT) === 0) motion(MotId.BATTLE); },
       peaceStance: () => { if (((self()?.act.stateFlag ?? 0) & ObjStaF.COMBAT) !== 0) motion(MotId.BATTLE); },
