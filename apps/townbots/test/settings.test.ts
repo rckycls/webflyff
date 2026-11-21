@@ -111,7 +111,7 @@ describe('loadSettings', () => {
 });
 
 describe('names and renames', () => {
-  const WORDS = { adjectives: ['Zorby', 'plim'], nouns: ['Trel', 'Mubo'], titles: ['Yoff'] };
+  const WORDS = { names: ['Zorbin', 'plimo'], words: ['Trelk', 'mubo'], first: ['Yoff', 'dree'], second: ['Vask', 'kesh'] };
 
   it('are optional: no word lists, no rename scroll, no early rename', () => {
     const s = parseSettings(valid());
@@ -126,15 +126,18 @@ describe('names and renames', () => {
     v.items.renameScroll = 5000;
     v.bots[0].renameSoon = true;
     const s = parseSettings(v);
-    expect(s.names!.nouns).toEqual(['Trel', 'Mubo']);
+    expect(s.names!.words).toEqual(['Trelk', 'mubo']);
     expect(s.items.renameScroll).toBe(5000);
     expect(s.bots[0]!.renameSoon).toBe(true);
   });
 
   const broken: Array<[string, (v: Record<string, any>) => void, RegExp]> = [
-    ['a word with a digit', (v) => { v.names = { ...WORDS, nouns: ['Trel9'] }; }, /names\.nouns\[0\]/],
-    ['a word with a space', (v) => { v.names = { ...WORDS, titles: ['Yoff Dree'] }; }, /names\.titles\[0\]/],
-    ['no nouns', (v) => { v.names = { ...WORDS, nouns: [] }; }, /names\.nouns/],
+    ['a word with a digit', (v) => { v.names = { ...WORDS, words: ['Trel9'] }; }, /names\.words\[0\]/],
+    ['a word with a space', (v) => { v.names = { ...WORDS, first: ['Yoff Dree'] }; }, /names\.first\[0\]/],
+    ['a name under 4 letters (the game takes 4 to 16)', (v) => { v.names = { ...WORDS, names: ['Zor'] }; }, /names\.names\[0\]/],
+    ['no words', (v) => { v.names = { ...WORDS, words: [] }; }, /names\.words/],
+    ['no second words', (v) => { v.names = { ...WORDS, second: [] }; }, /names\.second/],
+    ['the old word lists', (v) => { v.names = { adjectives: ['Zorby'], nouns: ['Trel'], titles: ['Yoff'] }; }, /names\.names/],
     ['a rename scroll that is gear', (v) => { v.items.renameScroll = 6000; v.items.gear = [6000]; }, /items\.renameScroll/],
     ['renameSoon that is not true or false', (v) => { v.bots[0].renameSoon = 'yes'; }, /bots\[0\]\.renameSoon/],
   ];
@@ -153,7 +156,7 @@ describe('names and renames', () => {
       writeFileSync(join(dir, 'words.json'), JSON.stringify(WORDS));
       v.names = 'words.json';
       writeFileSync(join(dir, 'bots.json'), JSON.stringify(v));
-      expect(loadSettings(join(dir, 'bots.json')).names!.titles).toEqual(['Yoff']);
+      expect(loadSettings(join(dir, 'bots.json')).names!.first).toEqual(['Yoff', 'dree']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

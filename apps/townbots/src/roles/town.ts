@@ -1,7 +1,8 @@
 // The town roles: wandering between the places players gather (standing, in combat stance now and then, a motion now
 // and then), AFK (one place for the whole role), and upgrading by the upgrade NPC (real tries on the bot's own spare
-// gear: everyone nearby sees the success or fail sparkle the server sends). Nobody sits, and a town place another bot
-// of the region holds is never taken (`RoleIo.pickPlace`): with none free, the bot stays where it is and asks again.
+// gear: everyone nearby sees the success or fail sparkle the server sends; each upgrader stands a few metres from the
+// NPC on a side of its own). Nobody sits, and a town place another bot of the region holds is never taken
+// (`RoleIo.pickPlace`): with none free, or a walk that gets stuck, the bot stays where it is and asks again.
 import type { InventoryItem, Vec3 } from '@flyffweb/protocol';
 import { TownWalk } from './route';
 import { between } from './types';
@@ -13,8 +14,12 @@ const MIN = 60 * SEC;
 const MAX_UPGRADE = 10;
 /** An upgrade with no answer after this long is over (ms). */
 const UPGRADE_ANSWER_MS = 10 * SEC;
-/** With every place held by others, a bot asks again after this long (ms). */
+/** With every place held by others, or a walk stuck on the way, a bot asks again after this long (ms). */
 const NO_PLACE_WAIT_MS = 30 * SEC;
+/** An upgrader stands this far from the NPC (m), on a side of its own. */
+const UPGRADE_NEAR_M: [number, number] = [2.5, 4];
+/** An upgrader stuck on the way within this of the NPC upgrades from there (m). */
+const UPGRADE_REACH_M = 8;
 
 const pick = <T>(list: readonly T[], random: () => number): T => list[Math.min(list.length - 1, Math.floor(random() * list.length))]!;
 
@@ -88,8 +93,13 @@ export class AfkRole implements RoleRunner {
       }
       this.walk = new TownWalk(place, this.io);
     }
-    // there, or stuck on the way: it settles where it is, one in two in combat stance, the rest just standing
-    if (this.walk.tick() !== 'walking') {
+    const status = this.walk.tick();
+    if (status === 'failed') {
+      // stuck on the way (against a fence, say): not there for the whole role; another place a while later
+      this.walk = null;
+      this.askAt = now + NO_PLACE_WAIT_MS;
+    } else if (status === 'arrived') {
+      // there: one in two in combat stance, the rest just standing
       if (this.io.random() < 0.5) this.io.combatStance();
       else this.io.peaceStance();
       this.settled = true;
@@ -108,6 +118,8 @@ export class UpgradeRole implements RoleRunner {
   private walk: TownWalk | null = null;
   private arrived = false;
   private nextTry = Infinity;
+  /** Where it stands: a few metres from the NPC, on a side of its own, so that upgraders do not stand on top of each other. */
+  private readonly standAt: Vec3;
   /** The try waiting for its answer: the spare as it was, the material's count, when it was sent. */
   private pending: { spare: InventoryItem; material: InventoryItem; at: number } | null = null;
 
@@ -118,6 +130,9 @@ export class UpgradeRole implements RoleRunner {
     duration: () => number,
   ) {
     this.until = io.now() + duration();
+    const angle = io.random() * 2 * Math.PI;
+    const off = UPGRADE_NEAR_M[0] + io.random() * (UPGRADE_NEAR_M[1] - UPGRADE_NEAR_M[0]);
+    this.standAt = [npcPos[0] + Math.cos(angle) * off, npcPos[1], npcPos[2] + Math.sin(angle) * off];
   }
 
   tick(): RoleStatus {
@@ -128,11 +143,15 @@ export class UpgradeRole implements RoleRunner {
     }
     if (now >= this.until) return 'done';
     if (!this.arrived) {
-      this.walk ??= new TownWalk(this.npcPos, this.io);
-      const status = this.walk.tick();
+      this.walk ??= new TownWalk(this.standAt, this.io);
+      let status = this.walk.tick();
       if (status === 'failed') {
-        this.io.log('cannot reach the upgrade NPC: another role');
-        return 'done';
+        const pos = this.io.position();
+        if (pos !== undefined && Math.hypot(pos[0] - this.npcPos[0], pos[2] - this.npcPos[2]) <= UPGRADE_REACH_M) status = 'arrived';
+        else {
+          this.io.log('cannot reach the upgrade NPC: another role');
+          return 'done';
+        }
       }
       if (status !== 'arrived') return 'running';
       this.arrived = true;

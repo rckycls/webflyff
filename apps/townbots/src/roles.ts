@@ -6,10 +6,10 @@ import { ROLES } from './settings';
 import type { Group, Role } from './settings';
 
 const MIN = 60_000;
-/** How long a role lasts (ms): farming, wandering and upgrading 20-60 minutes; shop and AFK 30-90. */
+/** How long a role lasts (ms): farming, wandering and upgrading 20-60 minutes; a shop 30-90; AFK 10-25 (owner, 2026-11-21: the town should look busy, so an AFK bot gets up and walks again before long). */
 const DURATION: Record<Role, [number, number]> = {
   farming: [20 * MIN, 60 * MIN], wandering: [20 * MIN, 60 * MIN], upgrading: [20 * MIN, 60 * MIN],
-  shop: [30 * MIN, 90 * MIN], afk: [30 * MIN, 90 * MIN],
+  shop: [30 * MIN, 90 * MIN], afk: [10 * MIN, 25 * MIN],
 };
 
 interface Held { role: Role; until: number }
