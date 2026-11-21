@@ -52,7 +52,22 @@ describe('RolePlanner', () => {
     expect(planner.remaining('nobody')).toBe(0);
   });
 
-  it('lets shop and AFK last up to 90 minutes, at least 30', () => {
+  it('ends AFK after 10 to 25 minutes, so its bots get up and walk again', () => {
+    let now = 0;
+    const long = new RolePlanner({ farming: 0, wandering: 0, upgrading: 0, shop: 0, afk: 1 }, () => 0.999, () => now);
+    expect(long.assign('b0', 'veteran')).toBe('afk');
+    now = 24 * MIN;
+    expect(long.due('b0')).toBe(false);
+    now = 25 * MIN;
+    expect(long.due('b0')).toBe(true);
+    now = 0;
+    const short = new RolePlanner({ farming: 0, wandering: 0, upgrading: 0, shop: 0, afk: 1 }, () => 0, () => now);
+    short.assign('b0', 'veteran');
+    now = 10 * MIN;
+    expect(short.due('b0')).toBe(true);
+  });
+
+  it('lets a shop last up to 90 minutes, at least 30', () => {
     let now = 0;
     const planner = new RolePlanner({ farming: 0, wandering: 0, upgrading: 0, shop: 1, afk: 0 }, () => 0.999, () => now);
     expect(planner.assign('b0', 'veteran')).toBe('shop');
