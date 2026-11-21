@@ -97,20 +97,29 @@ export class RouteWalker {
   }
 }
 
+/** A town walk that gets stuck is tried from this many different starting places in all before it fails. */
+const TOWN_WALK_STARTS = 8;
+
 /**
  * A walk to one place in town, through the places on the way (`RoleIo.pathTo`): the route walker (asked again every
- * few seconds, `failed` after 20 s stuck), and `arrived` as soon as the bot is within reach of the place, even in the
- * tick that asked for the walk.
+ * few seconds, stuck after 20 s), and `arrived` as soon as the bot is within reach of the place, even in the tick that
+ * asked for the walk. A stuck walk starts again from the next nearest place (the nearest may be behind a fence from
+ * where the bot stands), `failed` after the 8th.
  */
 export class TownWalk {
-  private readonly walker: RouteWalker;
+  private walker: RouteWalker;
+  private starts = 1;
 
   constructor(private readonly target: Vec3, private readonly io: RoleIo) {
     this.walker = new RouteWalker(io.pathTo(target), io);
   }
 
   tick(): WalkStatus {
-    const status = this.walker.tick();
+    let status = this.walker.tick();
+    if (status === 'failed' && this.starts < TOWN_WALK_STARTS) {
+      this.walker = new RouteWalker(this.io.pathTo(this.target, this.starts++), this.io);
+      status = 'walking';
+    }
     const pos = this.io.position();
     if (status === 'walking' && pos !== undefined && groundDistance(pos, this.target) <= ARRIVE_M) return 'arrived';
     return status;

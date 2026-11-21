@@ -48,7 +48,8 @@ describe('ShopRole, stuck', () => {
     io.items.set(5, item(5, 2000, 40));
     const role = new ShopRole([7, 0, 7], STOCK, io, () => 60 * MIN);
     let status = 'running';
-    for (let s = 0; s <= 25 && status === 'running'; s++) { io.t = s * 1000; status = role.tick(); }
+    // 8 starts of about 20 s each (TownWalk)
+    for (let s = 0; s <= 200 && status === 'running'; s++) { io.t = s * 1000; status = role.tick(); }
     expect(status).toBe('done');
     expect(io.calls.some((c) => c.startsWith('open'))).toBe(false);
     expect(io.dropped).toEqual([]);

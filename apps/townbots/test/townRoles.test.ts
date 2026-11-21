@@ -114,8 +114,9 @@ describe('town walks that get stuck', () => {
     io.items.set(1, item(1, 4000));
     io.items.set(2, item(2, 3000, 10));
     const role = new UpgradeRole([9, 0, 9], { materials: [3000], spares: [4000] }, io, () => 40 * MIN);
-    expect(tickFor(role, io, 0, 25)).toBe('running');
-    tickFor(role, io, 26_000, 120);
+    // 8 starts of about 20 s each (TownWalk), then it upgrades from where it is
+    expect(tickFor(role, io, 0, 120)).toBe('running');
+    tickFor(role, io, 121_000, 240);
     expect(io.calls.some((c) => c.startsWith('upgrade'))).toBe(true);
   });
 
@@ -125,7 +126,8 @@ describe('town walks that get stuck', () => {
     io.items.set(1, item(1, 4000));
     io.items.set(2, item(2, 3000, 10));
     const role = new UpgradeRole([9, 0, 9], { materials: [3000], spares: [4000] }, io, () => 40 * MIN);
-    expect(tickFor(role, io, 0, 25)).toBe('done');
+    // 8 starts of about 20 s each (TownWalk)
+    expect(tickFor(role, io, 0, 200)).toBe('done');
     expect(io.calls.some((c) => c.startsWith('upgrade'))).toBe(false);
   });
 

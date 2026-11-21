@@ -26,8 +26,11 @@ export interface RoleIo {
   hpRatio(): number;
   /** A straight walk to `pos`, as a tap on the ground there. */
   walkTo(pos: Vec3): void;
-  /** The places to walk through in town to reach `target` (`TownGraph.path`), ending with `target`. */
-  pathTo(target: Vec3): Vec3[];
+  /**
+   * The places to walk through to reach `target` (`TownGraph.path`: in town, and home from a field along its route),
+   * ending with `target`; `skip` starts from the next nearest place instead of the nearest (a walk from it got stuck).
+   */
+  pathTo(target: Vec3, skip?: number): Vec3[];
   /** A free one of the region's `candidates` (no other bot's place within 8 m), now this bot's; undefined when none is. */
   pickPlace(candidates: readonly Vec3[]): Vec3 | undefined;
   /** The Motion window's Combat Stance, when the bot is not in it. */
